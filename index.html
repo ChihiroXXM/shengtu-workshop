@@ -2352,7 +2352,7 @@ html.ui-paper select.field{background-image:url("data:image/svg+xml;utf8,<svg xm
 <style id="mobile-shell-layout">/* Shared phone/tablet shell. Rules are gated by real mobile device detection. */
 :root{--web-safe-top:env(safe-area-inset-top,0px);--web-safe-bottom:env(safe-area-inset-bottom,0px);--web-safe-left:env(safe-area-inset-left,0px);--web-safe-right:env(safe-area-inset-right,0px)}
 html[data-mobile-shell]{background:var(--bg);min-height:100%}
-html[data-mobile-shell] body{background:var(--bg);min-height:100dvh}
+html[data-mobile-shell] body{background:transparent;min-height:100dvh}
 html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 @media(max-width:900px),(orientation:landscape) and (max-height:600px){
  html[data-mobile-shell]{--mobile-tabs-height:calc(65px + var(--web-safe-bottom))}
@@ -2410,6 +2410,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
+<meta name="atelier-version" content="b065f4720d26f083e42b">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -12157,6 +12158,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js" defer></script>
+<script src="pwa-install.js?v=b065f4720d26f083e42b" defer></script><script src="pwa-update.js?v=b065f4720d26f083e42b" defer></script>
 </body>
 </html>
