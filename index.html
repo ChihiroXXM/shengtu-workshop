@@ -2352,7 +2352,7 @@ html.ui-paper select.field{background-image:url("data:image/svg+xml;utf8,<svg xm
  #mBox.rec-info-dialog .m-foot>button{min-height:40px;font-size:11.5px;padding:7px}
 }
 
-#imageStorageNotice{position:fixed;z-index:1999;left:12px;bottom:12px;box-sizing:border-box;width:min(430px,calc(100vw - 24px));padding:14px;border:1px solid var(--border-strong,#aaa);border-radius:12px;background:var(--modal,#f5f4f2);color:var(--text,#303030);box-shadow:0 4px 20px #0003;font:14px/1.5 system-ui}#imageStorageNotice p{margin:6px 0 10px}#imageStorageNotice div{display:flex;gap:8px;flex-wrap:wrap}#imageStorageNotice button{min-height:44px;padding:8px 12px;border:1px solid var(--border-strong,#aaa);border-radius:8px;background:var(--field,#eee);color:inherit;font:inherit}#imageStorageNotice small{display:block;margin-top:8px}html[data-mobile-shell] #imageStorageNotice{bottom:calc(var(--mobile-tabs-height,65px) + 12px)}
+#imageStorageNotice{position:fixed;z-index:1999;left:12px;bottom:12px;box-sizing:border-box;width:min(430px,calc(100vw - 24px));max-height:min(380px,45dvh);overflow:auto;padding:12px 14px;border:1px solid var(--border-strong,#aaa);border-radius:12px;background:var(--modal,#f5f4f2);color:var(--text,#303030);box-shadow:0 4px 20px #0003;font:14px/1.5 system-ui}#imageStorageNotice summary{min-height:44px;display:flex;align-items:center;padding-right:44px;cursor:pointer;font-weight:600;list-style-position:inside}#imageStorageNotice p{margin:6px 0 10px}#imageStorageNotice .image-storage-actions{display:flex;gap:8px;flex-wrap:wrap}#imageStorageNotice button{min-height:44px;padding:8px 12px;border:1px solid var(--border-strong,#aaa);border-radius:8px;background:var(--field,#eee);color:inherit;font:inherit}#imageStorageNotice .image-storage-dismiss{position:absolute;right:8px;top:10px;min-width:44px;padding:4px;font-size:22px;line-height:32px}#imageStorageNotice small{display:block;margin-top:8px}html[data-mobile-shell] #imageStorageNotice{bottom:calc(var(--mobile-tabs-height,65px) + 12px)}
 </style>
 <style id="mobile-shell-layout">/* Shared phone/tablet shell. Rules are gated by real mobile device detection. */
 :root{--web-safe-top:env(safe-area-inset-top,0px);--web-safe-bottom:env(safe-area-inset-bottom,0px);--web-safe-left:env(safe-area-inset-left,0px);--web-safe-right:env(safe-area-inset-right,0px)}
@@ -2415,7 +2415,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="5083794f0e4488fd036b">
+<meta name="atelier-version" content="89b26bdfa7fc17b295d6">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -12228,28 +12228,81 @@ openRecInfo=function(...args){const result=recipeRecInfoBefore(...args);$('#mBox
 document.addEventListener('change',e=>{if(!e.target.matches('[data-export-hide]'))return;recipeRefreshControls();if(e.target.checked&&recipeOptions().enabled)toast('文件名会显示配方名，图片中的生成信息仍会隐藏');});
 
 /* Keep storage errors distinct from an empty collection. Never clear or migrate user data. */
-const imageStorageState={history:'loading',albums:'loading',faults:new Map(),pending:new Set(),failedWrites:new Map(),retrying:false,dirtyAlbums:new Set()};
+const imageStorageState={history:'loading',albums:'loading',faults:new Map(),pending:new Set(),failedWrites:new Map(),retrying:false,dirtyAlbums:new Set(),pendingWrites:new Set(),dismissedSignature:'',checking:false};
 function imageStorageFault(key,error){
  imageStorageState.faults.set(key,{name:error?.name||'Error',message:error?.message||String(error)});
  imageStoragePaint();
 }
 function imageStorageClear(prefix){for(const key of imageStorageState.faults.keys())if(key===prefix||key.startsWith(prefix+':'))imageStorageState.faults.delete(key);}
+function imageStorageSignature(){
+ return JSON.stringify({faults:[...imageStorageState.faults.keys()].sort(),writes:[...imageStorageState.failedWrites.keys()].sort(),history:imageStorageState.history==='error',albums:imageStorageState.albums==='error'});
+}
+function imageStorageSummary(){
+ const keys=[...imageStorageState.faults.keys()],missingPreviews=keys.filter(key=>key.startsWith('missing:assets:')).length;
+ const blocking=imageStorageState.history==='error'||imageStorageState.albums==='error'||imageStorageState.failedWrites.size>0||keys.some(key=>!key.startsWith('missing:assets:'));
+ const message=blocking?(imageStorageState.failedWrites.size?'有改动尚未保存成功，请重试或导出可读资料。':'图片数据库读取异常，请重试；当前显示可能不完整。'):'有 '+missingPreviews+' 张旧例图暂时找不到；重读不会重新生成这些图片。可从原备份补回，仍可继续使用和更新。';
+ return{bad:keys.length>0||blocking,blocking,missingPreviews,message};
+}
+function imageStorageDismiss(){imageStorageState.dismissedSignature=imageStorageSignature();document.querySelector('#imageStorageNotice')?.remove();}
+function imageStorageMenu(bad){
+ const menu=document.querySelector('#uiMoreMenu');if(!menu)return;
+ let entry=document.querySelector('#imageStorageMenu');
+ if(!bad){entry?.remove();return;}
+ if(!entry){
+  entry=document.createElement('button');entry.id='imageStorageMenu';entry.type='button';entry.className='gbtn uq-menu-item';entry.textContent='图片资料检查';
+  entry.onclick=()=>{document.querySelector('#uiMore')?.removeAttribute('open');imageStorageState.dismissedSignature='';imageStoragePaint();};
+  menu.append(entry);
+ }
+}
 function imageStoragePaint(){
- if(!document.body)return;
+ if(!document.body||imageStorageState.checking)return;
+ const summary=imageStorageSummary();imageStorageMenu(summary.bad);
  let panel=document.querySelector('#imageStorageNotice');
- const bad=imageStorageState.faults.size||imageStorageState.failedWrites.size;
- if(!bad){panel?.remove();return;}
+ if(!summary.bad){panel?.remove();return;}
+ if(imageStorageState.dismissedSignature===imageStorageSignature()){panel?.remove();return;}
  if(!panel){
-  panel=document.createElement('section');panel.id='imageStorageNotice';panel.setAttribute('role','alert');
-  panel.innerHTML='<b>图片资料暂时没有完整读出或保存</b><p>当前显示可能不完整，不代表图片已删除。请先重新读取；暂时不要清理浏览器数据。</p><div><button type="button" data-storage-retry>重新读取图片</button><button type="button" data-storage-rescue>导出救援资料</button></div><small data-storage-status></small>';
+  panel=document.createElement('section');panel.id='imageStorageNotice';
+  panel.innerHTML='<button type="button" class="image-storage-dismiss" data-storage-close aria-label="关闭图片资料提示">×</button><details data-storage-details><summary data-storage-summary></summary><p data-storage-description></p><div class="image-storage-actions"><button type="button" data-storage-retry>重新读取图片</button><button type="button" data-storage-rescue>导出救援资料</button></div><small data-storage-status></small></details>';
+  panel.querySelector('[data-storage-close]').onclick=imageStorageDismiss;
   panel.querySelector('[data-storage-retry]').onclick=()=>imageStorageRetry();
   panel.querySelector('[data-storage-rescue]').onclick=()=>imageStorageRescue();
+  panel.querySelector('[data-storage-details]').open=summary.blocking;
   document.body.append(panel);
  }
- const status=panel.querySelector('[data-storage-status]');
- status.textContent=imageStorageState.retrying?'正在重新读取…':'刷新和自动备份已暂停，避免把不完整内容当作正常资料。';
+ panel.setAttribute('role',summary.blocking?'alert':'status');
+ panel.querySelector('[data-storage-summary]').textContent=summary.blocking?'图片资料需要检查':'部分旧例图不可用（'+summary.missingPreviews+' 张）';
+ panel.querySelector('[data-storage-description]').textContent=summary.message;
+ panel.querySelector('[data-storage-status]').textContent=imageStorageState.retrying?'正在重新读取，请稍候…':summary.blocking?'更新和自动备份暂缓；关闭提示不会清除资料或取消保护。':'自动备份暂缓，避免替换原来的完整备份。关闭后可从“更多 → 图片资料检查”重新打开。';
  panel.querySelector('[data-storage-retry]').disabled=imageStorageState.retrying;
 }
+async function imageStorageReadDeadline(promise){
+ let timer;
+ try{return await Promise.race([promise,new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('图片读取超时，可关闭提示后稍后重试')),5000);})]);}
+ finally{clearTimeout(timer);}
+}
+async function imageStorageWaitWrites(){
+ const start=Date.now();
+ while(imageStorageState.pendingWrites.size||uiGalleryBusy){
+  if(Date.now()-start>8000)throw new Error('图片仍在保存，请稍后重新读取；可以先关闭本提示');
+  await new Promise(resolve=>setTimeout(resolve,50));
+ }
+ if(await imageStorageWaitQueue()===false)throw new Error('例图尚未保存成功，请先重试保存或导出可读资料');
+}
+async function imageStorageRetryUnsaved(){
+ for(const [key,entry]of [...imageStorageState.failedWrites]){
+  if(entry.method!=='put')continue;
+  const stored=await DB.get(entry.store,entry.value.id);
+  // Add only a missing record. Never overwrite a record another tab may have saved.
+  if(stored)continue;
+  if(imageStorageState.failedWrites.get(key)!==entry)continue;
+  const value={...entry.value};if(entry.store==='images')delete value.localOnly;
+  try{
+   await DB.put(entry.store,value);
+   if(entry.store==='images'){const current=imgs.find(r=>r.id===value.id);if(current)delete current.localOnly;}
+  }catch{}
+ }
+}
+
 const imageStorageRawAll=DB.all.bind(DB),imageStorageRawGet=DB.get.bind(DB),imageStorageRawTx=DB.tx.bind(DB);
 let imageStorageOpening=null;
 DB.open=function(){
@@ -12276,8 +12329,9 @@ DB.tx=function(store,mode,action){
  let promise;
  try{if(!this.ok)throw new Error('图片数据库尚未连接');promise=imageStorageRawTx(store,mode,action);}catch(error){promise=Promise.reject(error);}
  promise=Promise.resolve(promise);
- imageStorageState.pending.add(promise);
- promise.then(()=>{},error=>{imageStorageFault((mode==='readonly'?'read:':'write:')+store,error);}).finally(()=>imageStorageState.pending.delete(promise));
+ if(mode==='readonly')promise=imageStorageReadDeadline(promise);
+ imageStorageState.pending.add(promise);if(mode!=='readonly')imageStorageState.pendingWrites.add(promise);
+ promise.then(()=>{if(mode==='readonly')imageStorageState.faults.delete('read:'+store);},error=>{imageStorageFault((mode==='readonly'?'read:':'write:')+store,error);}).finally(()=>{imageStorageState.pending.delete(promise);imageStorageState.pendingWrites.delete(promise);});
  return promise;
 };
 async function imageStorageRead(store,id,all){
@@ -12304,8 +12358,8 @@ for(const method of ['put','del']){
   const key=store+':'+(method==='put'?value.id:value);
   const entry={method,store,value};
   const promise=Promise.resolve().then(()=>before(store,value));
-  imageStorageState.pending.add(promise);
-  promise.then(()=>{imageStorageState.failedWrites.delete(key);if(![...imageStorageState.failedWrites.values()].some(e=>e.store===store))imageStorageClear('write:'+store);},error=>{imageStorageState.failedWrites.set(key,entry);imageStorageFault('write:'+store,error);}).finally(()=>{imageStorageState.pending.delete(promise);imageStoragePaint();});
+  imageStorageState.pending.add(promise);imageStorageState.pendingWrites.add(promise);
+  promise.then(()=>{imageStorageState.failedWrites.delete(key);if(![...imageStorageState.failedWrites.values()].some(e=>e.store===store))imageStorageClear('write:'+store);},error=>{imageStorageState.failedWrites.set(key,entry);imageStorageFault('write:'+store,error);}).finally(()=>{imageStorageState.pending.delete(promise);imageStorageState.pendingWrites.delete(promise);imageStoragePaint();});
   return promise;
  };
 }
@@ -12331,7 +12385,8 @@ async function imageStorageRetry(){
  if(imageStorageState.retrying)return;
  imageStorageState.retrying=true;imageStoragePaint();
  try{
-  if(imageStorageState.pending.size||uiGalleryBusy){toast('图片仍在保存或读取，请稍后再试');return;}
+  await imageStorageWaitWrites();
+  await imageStorageRetryUnsaved();
   await imageStorageLoadHistory();await imageStorageLoadAlbums();
   // Successful reads must also check each referenced preview before removing a warning.
   await imageStorageCheckRecords();
@@ -12339,7 +12394,7 @@ async function imageStorageRetry(){
   if(!viewing&&imgs[0])viewing={type:'img',id:imgs[0].id};
   renderView();renderStrip();
   if(typeof uiBooted!=='undefined'&&uiBooted){uiRefreshPage();uiRefreshGalleries();if(document.querySelector('#hBody'))drawHist();}
-  toast(imageStorageState.faults.size?'部分图片还未读出，请保留当前页面或导出救援资料':'图片资料已重新读取');
+  const summary=imageStorageSummary();toast(summary.bad?summary.message:'图片资料已重新读取');
  }catch(error){imageStorageFault('retry',error);}
  finally{imageStorageState.retrying=false;imageStoragePaint();}
 }
@@ -12350,6 +12405,8 @@ function imageStoragePreviewIds(){
  return ids;
 }
 async function imageStorageCheckRecords(){
+ imageStorageState.checking=true;
+ try{
  imageStorageClear('missing');
  let missing=0;
  for(const record of imgs){
@@ -12364,6 +12421,7 @@ async function imageStorageCheckRecords(){
   else imageStorageClear('missing:assets:'+id);
  }
  return missing;
+ }finally{imageStorageState.checking=false;imageStoragePaint();}
 }
 async function imageStorageWaitQueue(){
  let timer;
@@ -12373,7 +12431,7 @@ async function imageStorageWaitQueue(){
 async function imageStoragePrepareUpdate(){
  const start=Date.now();
  try{
-  while(imageStorageState.pending.size||uiGalleryBusy||fsBusy||remainingAutoBusy){
+  while(imageStorageState.pendingWrites.size||uiGalleryBusy||fsBusy||remainingAutoBusy){
    if(Date.now()-start>8000)return{ok:false,message:'图片或备份仍在保存，请完成后再更新。'};
    await new Promise(resolve=>setTimeout(resolve,50));
   }
@@ -12381,8 +12439,8 @@ async function imageStoragePrepareUpdate(){
   if(!await imageStorageLoadHistory()||!await imageStorageLoadAlbums())return{ok:false,message:'图片数据库读取异常，已暂停更新，请重新读取或导出救援资料。'};
   await imageStorageCheckRecords();
   imageStorageClear('retry');imageStorageClear('update');
-  if(imageStorageState.failedWrites.size||imageStorageState.faults.size)return{ok:false,message:'图片资料还未完整保存或读出，已暂停更新，请重新读取或导出救援资料。'};
-  if(imageStorageState.pending.size||uiGalleryBusy||fsBusy||remainingAutoBusy||jobs.some(job=>job.status==='run'))return{ok:false,message:'仍有任务未完成，请稍后更新。'};
+  if(imageStorageSummary().blocking)return{ok:false,message:'图片资料还未完整保存或读出，已暂停更新，请重新读取或导出救援资料。'};
+  if(imageStorageState.pendingWrites.size||uiGalleryBusy||fsBusy||remainingAutoBusy||jobs.some(job=>job.status==='run'))return{ok:false,message:'仍有任务未完成，请稍后更新。'};
   return{ok:true};
  }catch(error){imageStorageFault('update',error);return{ok:false,message:'未能确认图片资料完整，已暂停更新，请重新读取或导出救援资料。'};}
 }
@@ -12508,6 +12566,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=5083794f0e4488fd036b" defer></script><script src="pwa-update.js?v=5083794f0e4488fd036b" defer></script>
+<script src="pwa-install.js?v=89b26bdfa7fc17b295d6" defer></script><script src="pwa-update.js?v=89b26bdfa7fc17b295d6" defer></script>
 </body>
 </html>

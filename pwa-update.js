@@ -16,7 +16,7 @@
   return '';
  }
  // An already-open older HTML receives this external script too. Keep its first update safe.
- async function legacyReady(){
+ async function legacyReady(allowMissingPreviews=false){
   const failed={ok:false,message:'图片资料尚未完整保存或读出，请先下载原图或导出备份，再重试更新。'};
   try{
    if(typeof DB==='undefined'||!DB.ok)return failed;
@@ -31,7 +31,7 @@
    for(const r of imgs){const saved=stored.get(r.id);if(r.localOnly||!saved||(r.blob&&(!saved.blob||saved.blob.size!==r.blob.size)))return failed;}
    const ids=new Set([...artists,...roles].flatMap(r=>(r.imgs||[]).map(i=>i.id)));
    if(typeof uiAlbums!=='undefined')for(const album of uiAlbums.values())for(const i of album.items||[])if(!i.blob&&!i.vibeId)ids.add(i.assetId||i.id);
-   for(const id of ids){const r=await DB.get('assets',id);if(!r?.blob&&!r?.thumb)return failed;}
+   for(const id of ids){const r=await DB.get('assets',id);if(!r?.blob&&!r?.thumb&&!allowMissingPreviews)return failed;}
    return{ok:true};
   }catch{return failed;}
  }
@@ -49,7 +49,9 @@
    update.disabled=true;
    try{
     message.textContent='正在确认图片资料已保存…';
-    const ready=typeof imageStoragePrepareUpdate==='function'?await imageStoragePrepareUpdate():await legacyReady();
+    let ready=typeof imageStoragePrepareUpdate==='function'?await imageStoragePrepareUpdate():await legacyReady();
+    // Older installed HTML can contain dangling preview references. They must not trap the update that fixes this notice.
+    if(!ready.ok&&typeof imageStorageState!=='undefined'&&!imageStorageState.failedWrites.size&&!imageStorageState.pending.size&&imageStorageState.history==='ready'&&imageStorageState.albums==='ready'&&imageStorageState.faults.size&&[...imageStorageState.faults.keys()].every(key=>key.startsWith('missing:assets:')))ready=await legacyReady(true);
     if(!ready.ok){message.textContent=ready.message;return;}
     const active=blocked();if(active){message.textContent=active;return;}
     // Existing main controls persist their values through their normal change handlers.
