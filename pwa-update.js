@@ -15,6 +15,26 @@
   if(typeof asBusy==='function'&&asBusy())return '助手还在回复，完成后再点更新。';
   return '';
  }
+ // An already-open older HTML receives this external script too. Keep its first update safe.
+ async function legacyReady(){
+  const failed={ok:false,message:'图片资料尚未完整保存或读出，请先下载原图或导出备份，再重试更新。'};
+  try{
+   if(typeof DB==='undefined'||!DB.ok)return failed;
+   const start=Date.now();
+   while((typeof uiGalleryBusy!=='undefined'&&uiGalleryBusy)||(typeof fsBusy!=='undefined'&&fsBusy)||(typeof remainingAutoBusy!=='undefined'&&remainingAutoBusy)){
+    if(Date.now()-start>8000)return failed;
+    await new Promise(resolve=>setTimeout(resolve,50));
+   }
+   if(typeof uiGalleryQueue!=='undefined'){let timer;try{const result=await Promise.race([uiGalleryQueue,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('例图保存超时')),8000);})]);if(result===false)return failed;}finally{clearTimeout(timer);}}
+   // A readonly transaction queues after earlier writes in the same object store.
+   const rows=await DB.all('images'),stored=new Map(rows.map(r=>[r.id,r]));
+   for(const r of imgs){const saved=stored.get(r.id);if(r.localOnly||!saved||(r.blob&&(!saved.blob||saved.blob.size!==r.blob.size)))return failed;}
+   const ids=new Set([...artists,...roles].flatMap(r=>(r.imgs||[]).map(i=>i.id)));
+   if(typeof uiAlbums!=='undefined')for(const album of uiAlbums.values())for(const i of album.items||[])if(!i.blob&&!i.vibeId)ids.add(i.assetId||i.id);
+   for(const id of ids){const r=await DB.get('assets',id);if(!r?.blob&&!r?.thumb)return failed;}
+   return{ok:true};
+  }catch{return failed;}
+ }
  function show(version){
   pending=version;
   if(notice)return;
@@ -24,9 +44,14 @@
   const later=document.createElement('button');later.id='atelierUpdateLater';later.type='button';later.textContent='稍后';
   later.onclick=()=>{dismissed=pending;notice.remove();notice=null;};
   const update=document.createElement('button');update.id='atelierUpdateNow';update.type='button';update.textContent='更新';
-  update.onclick=()=>{
+  update.onclick=async()=>{
    const reason=blocked();if(reason){message.textContent=reason;return;}
+   update.disabled=true;
    try{
+    message.textContent='正在确认图片资料已保存…';
+    const ready=typeof imageStoragePrepareUpdate==='function'?await imageStoragePrepareUpdate():await legacyReady();
+    if(!ready.ok){message.textContent=ready.message;return;}
+    const active=blocked();if(active){message.textContent=active;return;}
     // Existing main controls persist their values through their normal change handlers.
     const focused=document.activeElement;
     if(focused?.matches('input,textarea,select'))focused.dispatchEvent(new Event('change',{bubbles:true}));
@@ -35,7 +60,7 @@
     if(typeof imageSyncActiveParams==='function')imageSyncActiveParams();
     if(typeof P!=='undefined'&&typeof LS!=='undefined'&&LS.set('gw-p',P)===false){message.textContent='当前设置未保存，请先备份再更新。';return;}
     const url=new URL(location.href);url.searchParams.set('atelier-update',pending);location.replace(url.href);
-   }catch{message.textContent='暂时无法更新，请稍后重试。';}
+   }catch{message.textContent='暂时无法更新，请稍后重试。';}finally{update.disabled=false;}
   };
   actions.append(later,update);notice.append(message,actions);document.body.append(notice);
  }
