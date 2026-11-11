@@ -2410,7 +2410,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="b065f4720d26f083e42b">
+<meta name="atelier-version" content="13b773db8816facce091">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -11094,6 +11094,47 @@ fsSaveFavs=function(){imageExportFolderBatch(imgs.filter(r=>r.fav&&r.blob).sort(
 
 document.addEventListener('click',e=>{if(e.target.closest('#hPick')&&!H.pick)H.hideInfo=false;},true);
 
+/* Privacy mode applies to copy and native image saves as well as download buttons. */
+const privacyOriginalSource=srcOf,privacyCopies=new WeakMap(),privacyPending=new Map();
+const privacyBlank='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+function privacyDisplaySource(blob){
+ let entry=privacyCopies.get(blob);
+ if(entry)return entry.url||entry.placeholder;
+ entry={placeholder:privacyBlank+'#privacy-'+uid(),url:''};privacyCopies.set(blob,entry);privacyPending.set(entry.placeholder,entry);
+ exportPrivacyBlob(blob).then(clean=>{
+  entry.url=URL.createObjectURL(clean);
+  if(imageExportKeepHidden)for(const image of document.images)if(image.getAttribute('src')===entry.placeholder)image.src=entry.url;
+ }).catch(()=>{entry.failed=true;toast('图片隐私清理失败，已阻止复制和原生保存，请重新下载隐藏副本。');}).finally(()=>privacyPending.delete(entry.placeholder));
+ return entry.placeholder;
+}
+srcOf=function(r,thumb){
+ if(!imageExportKeepHidden)return privacyOriginalSource(r,thumb);
+ const blob=thumb?(r.thumb||r.blob):r.blob;
+ return blob?privacyDisplaySource(blob):privacyBlank;
+};
+function privacyRefreshImages(){
+ const originals=new Map();
+ for(const r of imgs){
+  for(const thumb of [false,true]){
+   const key=r.id+(thumb?'_t':''),source=urlCache[key];
+   if(source)originals.set(source,{r,thumb});
+   const blob=thumb?(r.thumb||r.blob):r.blob,entry=blob&&privacyCopies.get(blob);
+   if(entry){originals.set(entry.placeholder,{r,thumb});if(entry.url)originals.set(entry.url,{r,thumb});}
+  }
+  if(r.url)originals.set(safeImageUrl(r.url),{r,thumb:false});
+ }
+ for(const image of document.images){const record=originals.get(image.getAttribute('src'));if(record)image.src=srcOf(record.r,record.thumb);}
+}
+const privacySetBefore=imageExportSet;
+imageExportSet=function(id,value){privacySetBefore(id,value);privacyRefreshImages();};
+const privacyCopyBefore=copyImg;
+copyImg=async function(id){
+ if(!imageExportHidden(id))return privacyCopyBefore(id);
+ const r=recById(id);if(!r?.blob){toast('没有可清理的原图，未复制图片。');return;}
+ try{const clean=imageExportBlob(r,true);clean.catch(()=>{});await navigator.clipboard.write([new ClipboardItem({'image/png':clean})]);toast('已复制隐藏生成信息的图片副本');}
+ catch{toast('隐私图片未复制成功，请使用下载隐藏副本。');}
+};
+
 /* Shared organization only: no generation, model routing or credential mutations. */
 const COLLECTION_KINDS=['prompt','art','vibe','char'];
 let collectionUI=LS.get('gw-collection-ui',{})||{};
@@ -12158,6 +12199,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=b065f4720d26f083e42b" defer></script><script src="pwa-update.js?v=b065f4720d26f083e42b" defer></script>
+<script src="pwa-install.js?v=13b773db8816facce091" defer></script><script src="pwa-update.js?v=13b773db8816facce091" defer></script>
 </body>
 </html>
