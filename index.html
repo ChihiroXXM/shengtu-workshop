@@ -1540,6 +1540,9 @@ svg.i.ti{width:1.15em;height:1.15em;vertical-align:-.2em;margin-right:.25em}
 #lbBar .image-export-choice{color:inherit}
 @media(max-width:600px){#viewBar:has(.image-export-choice){max-height:260px}}
 
+/* Reserve image geometry while the privacy-safe display copy is prepared. */
+img[src*="#privacy-"]{visibility:hidden}
+
 .collection-star{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-width:76px;min-height:34px;padding:6px 12px;border:1px solid var(--border);border-radius:10px;background:var(--inner);color:var(--text-2);font:inherit;font-size:12px;line-height:1.3;cursor:pointer;white-space:nowrap;transition:background-color .16s,border-color .16s,color .16s;flex-shrink:0}
 .collection-star svg.i{width:17px;height:17px;flex:none}
 .collection-star:hover{background:var(--inner-hover);border-color:var(--text-3)}
@@ -2412,7 +2415,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="0b35873debfe78292080">
+<meta name="atelier-version" content="5083794f0e4488fd036b">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -11097,7 +11100,7 @@ document.addEventListener('click',e=>{if(e.target.closest('#hPick')&&!H.pick)H.h
 
 /* Privacy mode applies to copy and native image saves as well as download buttons. */
 const privacyOriginalSource=srcOf,privacyCopies=new WeakMap(),privacyPending=new Map();
-const privacyBlank='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==';
+const privacyBlank='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=';
 function privacyDisplaySource(blob){
  let entry=privacyCopies.get(blob);
  if(entry)return entry.url||entry.placeholder;
@@ -11379,16 +11382,70 @@ async function workshopValidateBackup(blob){
   for(const a of data.albums)for(const i of a.items||[])if(!z[i.file])throw Error('缺少预览图：'+i.file);for(const r of [...(data.images||[]),...(data.vibes||[])])for(const name of [r.file,r.imageFile,r.thumbFile].filter(Boolean))if(!z[name])throw Error('缺少图片：'+name);
  }return{data,z};
 }
-function remainingPlanMerge(existing,incoming){const result=structuredClone(existing),map=new Map(),added=[];for(const raw of incoming||[]){if(!raw||typeof raw.id!=='string')throw Error('素材ID无效');const r=structuredClone(raw),same=result.find(x=>x.id===r.id);if(same&&remainingStable(remainingClean(same,true))===remainingStable(remainingClean(r,true))){map.set(raw.id,same.id);continue;}if(same)r.id='restored-'+crypto.randomUUID();let n=r.name||'未命名',i=2;while(result.some(x=>x.name===n))n=(r.name||'未命名')+'（恢复 '+i+++'）';r.name=n;map.set(raw.id,r.id);result.push(r);added.push(r);}return{result,map,added};}
+function remainingRestoreName(name){return String(name||'未命名').replace(/(?:（(?:恢复|同名副本) \d+）)+$/u,'');}
+function remainingRestoreContent(record,kind){
+ const value=remainingClean(record,true);
+ if(['art','char','prompt','author'].includes(kind)){
+  for(const key of ['id','created','updated','used','lastUsed','fav','imgs','previewCount'])delete value[key];
+  value.name=remainingRestoreName(value.name);
+  if(kind==='art')for(const key of ['tagsOrig','neg','note'])value[key]=value[key]||'';
+ }
+ return remainingStable(value);
+}
+function remainingPlanMerge(existing,incoming,options={}){
+ const result=structuredClone(existing),map=new Map(),added=[];
+ const material=['art','char','prompt','author'].includes(options.kind);
+ for(const raw of incoming||[]){
+  if(!raw||typeof raw.id!=='string')throw Error('素材ID无效');
+  const r=structuredClone(raw),same=result.find(x=>x.id===r.id),content=remainingRestoreContent(r,options.kind);
+  const identical=same&&remainingRestoreContent(same,options.kind)===content?same:material?result.find(x=>remainingRestoreContent(x,options.kind)===content):null;
+  if(identical){map.set(raw.id,identical.id);continue;}
+  if(same)r.id='restored-'+crypto.randomUUID();
+  const base=material?remainingRestoreName(r.name):r.name||'未命名';let name=base,index=2;
+  while(result.some(x=>x.name===name))name=base+'（同名副本 '+index+++'）';
+  r.name=name;map.set(raw.id,r.id);result.push(r);added.push(r);
+ }
+ return{result,map,added};
+}
+
 const remainingLegacyRestore=doRestore;
 async function workshopRestorePackage(file){
  const{data,z}=await workshopValidateBackup(file);if(data.ver===1){await remainingLegacyRestore(file);return{legacy:true};}if(!DB.ok)throw Error('浏览器存储不可用');
  const restoreCurrent=Object.values(data.scope).every(Boolean)&&!P.prompt&&!curId;const scope=data.scope,plans={},map=new Map(),existing={prompt:uiPrompts,art:artists,char:roles,vibe:vibes,author:uiAuthors};
- for(const[cat,kind,field]of[['promptNeg','prompt','prompts'],['artist','art','artists'],['role','char','roles'],['vibe','vibe','vibes'],['author','author','authors']])if(scope[cat]){const plan=kind==='vibe'?vibePlanMerge(existing[kind],data[field]):remainingPlanMerge(existing[kind],data[field]);plans[kind]=plan;for(const[old,id]of plan.map)map.set(kind+':'+old,kind+':'+id);}
+ for(const[cat,kind,field]of[['promptNeg','prompt','prompts'],['artist','art','artists'],['role','char','roles'],['vibe','vibe','vibes'],['author','author','authors']])if(scope[cat]){const plan=kind==='vibe'?vibePlanMerge(existing[kind],data[field]):remainingPlanMerge(existing[kind],data[field],{kind});plans[kind]=plan;for(const[old,id]of plan.map)map.set(kind+':'+old,kind+':'+id);}
  vibeBundleRemap(plans.vibe);
- const assetIds=new Map(),assetWrites=[];for(const f of data.files.filter(f=>f.name.startsWith('atelier/'))){const id='restored-preview-'+crypto.randomUUID(),blob=new Blob([z[f.name]],{type:f.mime});assetIds.set(f.name,id);const m=await measure(blob);assetWrites.push({id,blob,thumb:await makeThumb(m.im)});URL.revokeObjectURL(m.url);}
- const albumWrites=[];for(const raw of data.albums){const key=map.get(raw.key);if(!key)continue;if(uiAlbums.get(key)?.items.length&&key===raw.key)continue;const a=structuredClone(raw);a.key=key;a.id='ui-gallery:'+key;for(const i of a.items){i.id=assetIds.get(i.file);i.assetId=i.id;delete i.file;delete i.vibeId;}albumWrites.push(a);}
- for(const[kind,plan]of Object.entries(plans))for(const r of plan.added){const album=albumWrites.find(a=>a.key===kind+':'+r.id);if(kind==='art'||kind==='char')r.imgs=(album?.items||[]).map(i=>({id:i.assetId,source:i.source||'author',from:i.from||null}));if(kind==='vibe')for(const[field,target]of[['imageFile','image'],['thumbFile','thumb']])if(r[field]){const f=data.files.find(f=>f.name===r[field]);r[target]=new Blob([z[r[field]]],{type:f.mime});delete r[field];}}
+ const assetIds=new Map(),assetWrites=[],albumWrites=[];
+ for(const raw of data.albums){
+  const key=map.get(raw.key);if(!key)continue;
+  const kind=key.split(':')[0],record=existing[kind]?.find(r=>kind+':'+r.id===key);
+  const original=uiAlbums.get(key)||(record&&(kind==='art'||kind==='char')?{id:'ui-gallery:'+key,key,show:record.previewCount||2,items:(record.imgs||[]).map(i=>({id:i.id,assetId:i.id,name:record.name+' · 示例',source:i.source||(i.from?'mine':'author'),from:i.from||null}))}:null);
+  const album=original?structuredClone(original):{...structuredClone(raw),key,id:'ui-gallery:'+key,items:[]};
+  const hashes=new Map();
+  for(const item of album.items){
+   const stored=await DB.get('assets',item.assetId||item.id);
+   if(stored?.blob)hashes.set(await remainingHash(stored.blob),item);
+  }
+  for(const item of raw.items){
+   const file=data.files.find(f=>f.name===item.file);if(!file)throw Error('备份缺少例图：'+item.file);
+   if(hashes.has(file.sha256))continue;
+   let id=assetIds.get(file.name);
+   if(!id){
+    id='restored-preview-'+crypto.randomUUID();const blob=new Blob([z[file.name]],{type:file.mime}),m=await measure(blob);
+    assetWrites.push({id,blob,thumb:await makeThumb(m.im)});URL.revokeObjectURL(m.url);assetIds.set(file.name,id);
+   }
+   const restored={...structuredClone(item),id,assetId:id};delete restored.file;delete restored.vibeId;
+   // Replace only an exact dangling asset reference; retain all other existing previews.
+   const dangling=album.items.findIndex(i=>(i.assetId||i.id)===(item.assetId||item.id));
+   if(dangling>=0)album.items[dangling]=restored;else album.items.push(restored);
+   hashes.set(file.sha256,restored);
+  }
+  if(!original||remainingStable(original)!==remainingStable(album))albumWrites.push(album);
+ }
+ for(const[kind,plan]of Object.entries(plans))for(const r of plan.result){
+  const album=albumWrites.find(a=>a.key===kind+':'+r.id);
+  if((kind==='art'||kind==='char')&&album){r.imgs=album.items.map(i=>({id:i.assetId||i.id,source:i.source||'author',from:i.from||null}));r.previewCount=album.show;}
+  if(kind==='vibe'&&plan.added.includes(r))for(const[field,target]of[['imageFile','image'],['thumbFile','thumb']])if(r[field]){const file=data.files.find(f=>f.name===r[field]);r[target]=new Blob([z[r[field]]],{type:file.mime});delete r[field];}
+ }
  const links={...uiLinks};if(scope.author)for(const[key,author]of Object.entries(data.links||{})){const mapped=map.get(key)||key,aid=plans.author?.map.get(author)||author,kind=mapped.slice(0,mapped.indexOf(':')),id=mapped.slice(mapped.indexOf(':')+1);if((plans[kind]?.result||existing[kind]||[]).some(r=>r.id===id)&&!Object.hasOwn(links,mapped))links[mapped]=aid;}
  const mergedApis=scope.api?mergeImageApis(apis,data.apis||[]):null,textPlan=scope.api?remainingPlanMerge(tapis,data.tapis||[]):null,presetPlan=scope.preset?remainingPlanMerge(presets,data.presets||[]):null;if(presetPlan&&mergedApis)for(const x of presetPlan.added)if(x.apiId)x.apiId=mergedApis.idMap[x.apiId]||x.apiId;
  const imageWrites=[];if(scope.images)for(const raw of data.images){if(imgs.some(r=>r.id===raw.id))continue;const r=structuredClone(raw);if(r.file){const f=data.files.find(f=>f.name===r.file);r.blob=new Blob([z[r.file]],{type:f.mime});delete r.file;const m=await measure(r.blob);r.thumb=await makeThumb(m.im);URL.revokeObjectURL(m.url);}imageWrites.push(r);}
@@ -12451,6 +12508,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=0b35873debfe78292080" defer></script><script src="pwa-update.js?v=0b35873debfe78292080" defer></script>
+<script src="pwa-install.js?v=5083794f0e4488fd036b" defer></script><script src="pwa-update.js?v=5083794f0e4488fd036b" defer></script>
 </body>
 </html>
