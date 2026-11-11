@@ -2415,7 +2415,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="89b26bdfa7fc17b295d6">
+<meta name="atelier-version" content="d69d4002af3f0761c9f0">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -8238,14 +8238,11 @@ async function doRestore(file) {
     for (const name of needed) if (!z[name]) throw new Error("备份缺少图片：" + name);
     let ni = 0, na = 0;
     for (const m of data.images || []) {
-      if (imgs.some(r => r.id === m.id)) continue;
-      const r = Object.assign({}, m); delete r.file; delete r.localOnly;
-      if (m.file) {
-        r.blob = new Blob([z[m.file]], { type: m.mime || "image/png" });
-        try { const mm = await measure(r.blob); r.thumb = await makeThumb(mm.im); URL.revokeObjectURL(mm.url); } catch (e) {}
-      }
-      await DB.put("images", r); imgs.push(r); ni++;
-      if (o && ni % 10 === 0) o.innerHTML = `正在恢复…已经放回 ${ni} 张`;
+      const restored=await workshopRestoreHistoryRecord(m,z);
+      if(!restored)continue;
+      await DB.put("images",restored);
+      const index=imgs.findIndex(r=>r.id===restored.id);if(index>=0)imgs[index]=restored;else imgs.push(restored);
+      ni++;if(o&&ni%10===0)o.innerHTML=`正在恢复…已经放回 ${ni} 张`;
     }
     imgs.sort((a, b) => b.created - a.created);
     const mergedImageApis = mergeImageApis(apis, data.apis || []);
@@ -8264,26 +8261,32 @@ async function doRestore(file) {
     for (const n of data.negs || []) if (!negLib.some(x => x.id === n.id || x.text === n.text)) negLib.push(n); saveNegs();
     let nr = 0;
     for (const a of data.artists || []) {
-      if (artists.some(x => x.id === a.id)) continue;
-      for (const i of a.imgs || []) {
-        const k = Object.keys(z).find(n => n.startsWith(`artists/${i.id}.`)); if (!k) continue;
-        const blob = new Blob([z[k]], { type: "image/" + (k.split(".").pop() === "jpg" ? "jpeg" : k.split(".").pop()) });
-        let thumb = null; try { const mm = await measure(blob); thumb = await makeThumb(mm.im); URL.revokeObjectURL(mm.url); } catch (e) {}
-        await DB.put("assets", { id: i.id, blob, thumb });
+      const existing=artists.find(x=>x.id===a.id);
+      for(const i of a.imgs||[]){
+        const stored=await DB.get('assets',i.id);
+        if(stored?.blob instanceof Blob&&stored.blob.size>0)continue;
+        const k=Object.keys(z).find(n=>n.startsWith(`artists/${i.id}.`));if(!k)continue;
+        const blob=new Blob([z[k]],{type:'image/'+(k.split('.').pop()==='jpg'?'jpeg':k.split('.').pop())});
+        const mm=await measure(blob);let thumb;try{thumb=await makeThumb(mm.im);}finally{URL.revokeObjectURL(mm.url);}
+        await DB.put('assets',{...stored,id:i.id,blob,thumb});
       }
-      artists.push(a); nr++;
+      if(existing){existing.imgs=existing.imgs||[];for(const i of a.imgs||[])if(!existing.imgs.some(x=>x.id===i.id))existing.imgs.push(structuredClone(i));}
+      else{artists.push(a);nr++;}
     }
     saveArtists();
     let nro = 0;
     for (const a of data.roles || []) {
-      if (roles.some(x => x.id === a.id)) continue;
-      for (const i of a.imgs || []) {
-        const k = Object.keys(z).find(n => n.startsWith(`roles/${i.id}.`)); if (!k) continue;
-        const blob = new Blob([z[k]], { type: "image/" + (k.split(".").pop() === "jpg" ? "jpeg" : k.split(".").pop()) });
-        let thumb = null; try { const mm = await measure(blob); thumb = await makeThumb(mm.im); URL.revokeObjectURL(mm.url); } catch (e) {}
-        await DB.put("assets", { id: i.id, blob, thumb });
+      const existing=roles.find(x=>x.id===a.id);
+      for(const i of a.imgs||[]){
+        const stored=await DB.get('assets',i.id);
+        if(stored?.blob instanceof Blob&&stored.blob.size>0)continue;
+        const k=Object.keys(z).find(n=>n.startsWith(`roles/${i.id}.`));if(!k)continue;
+        const blob=new Blob([z[k]],{type:'image/'+(k.split('.').pop()==='jpg'?'jpeg':k.split('.').pop())});
+        const mm=await measure(blob);let thumb;try{thumb=await makeThumb(mm.im);}finally{URL.revokeObjectURL(mm.url);}
+        await DB.put('assets',{...stored,id:i.id,blob,thumb});
       }
-      roles.push(a); nro++;
+      if(existing){existing.imgs=existing.imgs||[];for(const i of a.imgs||[])if(!existing.imgs.some(x=>x.id===i.id))existing.imgs.push(structuredClone(i));}
+      else{roles.push(a);nro++;}
     }
     saveRoles();
     let nv = 0;
@@ -8300,8 +8303,8 @@ async function doRestore(file) {
     renderApiPill(); renderLeft(); renderView(); renderStrip();
     const msg = `恢复好了：放回 ${ni} 张图、${na} 个接口、${np} 个预设${nr ? `、${nr} 串画师串` : ""}${nro ? `、${nro} 个角色` : ""}${nv ? `、${nv} 个 vibe` : ""}${data.withKey ? "" : "。这份备份不带密钥，接口要重新填一下密钥"}`;
     if (o) o.innerHTML = `<span class="ok"><svg class="i ti"><use href="#i-okc"/></svg>${msg}</span>`;
-    toast(msg, IMG.done);
-  } catch (e) { if (o) o.innerHTML = `<span class="bad"><svg class="i ti"><use href="#i-badc"/></svg>恢复未完成：${esc(e.message || "读不了这个文件")}。已恢复的内容会保留，检查空间后可重试。</span>`; }
+    toast(msg, IMG.done);return {images:ni};
+  } catch (e) { if (o) o.innerHTML = `<span class="bad"><svg class="i ti"><use href="#i-badc"/></svg>恢复未完成：${esc(e.message || "读不了这个文件")}。已恢复的内容会保留，检查空间后可重试。</span>`; throw e; }
 }
 $("#bkFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) doRestore(f); e.target.value = ""; });
 
@@ -10039,8 +10042,8 @@ function uiMaterialCard(kind,r){
 function uiRenderLibrary(){
   const kind=uiState.kind,records=kind==='char'?roleSort():uiRecords(kind),state=collectionState('library',kind),q=state.query.trim().toLowerCase();uiState.query=state.query;
   const list=records.filter(r=>collectionMatch(kind,r,state));
-  $('#uiPage-library').innerHTML='<div class="ui-tabs">'+UI_KINDS.map(([k,n,ic])=>'<button class="'+(k===kind?'on':'')+'" data-atelier-action="kind" data-kind="'+k+'">'+n+'<small>'+uiRecords(k).length+'</small></button>').join('')+'</div><div class="ui-toolbar"><input class="field" id="uiMaterialQ" placeholder="搜索名字、内容或作者" value="'+esc(uiState.query)+'">'+collectionLibraryControls(kind,list.length,records.length)+'<button class="gbtn solid" data-atelier-action="new-material">'+uiIcon('09-01')+(kind==='vibe'?'导入 Vibe':'新建'+UI_KINDS.find(k=>k[0]===kind)[1])+'</button>'+(kind==='art'?'<button class="gbtn" onclick="openArtParse()">'+uiIcon('02-04')+'从图片解析</button>':kind==='vibe'?'<button class="gbtn" data-atelier-action="upload-vibe">上传原图</button>':'')+'<button class="gbtn" data-atelier-action="classify">按作者整理</button></div><div class="ui-card-grid" id="uiMaterialGrid">'+(list.length?list.map(r=>uiMaterialCard(kind,r)).join(''):uiEmpty(records.length?'没有找到':'这里还没有素材',records.length?'换个词试试。':'把喜欢的内容存进来，作者分类和素材库会共用同一份。'))+'</div>';
-  uiBindCompositionSearch($('#uiMaterialQ'),value=>uiLibrarySearchResults(kind,value));uiHydrate();uiGalleryHydrate();uiScheduleLayout();
+  $('#uiPage-library').innerHTML='<div class="ui-tabs">'+UI_KINDS.map(([k,n,ic])=>'<button class="'+(k===kind?'on':'')+'" data-atelier-action="kind" data-kind="'+k+'">'+n+'<small>'+uiRecords(k).length+'</small></button>').join('')+'</div><div class="ui-toolbar"><input class="field" id="uiMaterialQ" placeholder="搜索名字、内容或作者" value="'+esc(uiState.query)+'">'+collectionLibraryControls(kind,list.length,records.length)+'<button class="gbtn solid" data-atelier-action="new-material">'+uiIcon('09-01')+(kind==='vibe'?'导入 Vibe':'新建'+UI_KINDS.find(k=>k[0]===kind)[1])+'</button>'+(kind==='art'?'<button class="gbtn" onclick="openArtParse()">'+uiIcon('02-04')+'从图片解析</button>':kind==='vibe'?'<button class="gbtn" data-atelier-action="upload-vibe">上传原图</button>':'')+'<button class="gbtn" data-atelier-action="classify">按作者整理</button></div><div class="ui-card-grid" id="uiMaterialGrid">'+(list.length?uiLibraryStart(list,kind).map(r=>uiMaterialCard(kind,r)).join(''):uiEmpty(records.length?'没有找到':'这里还没有素材',records.length?'换个词试试。':'把喜欢的内容存进来，作者分类和素材库会共用同一份。'))+'</div>';
+  if(!list.length)uiLibraryStart(list,kind);uiLibraryObserve();uiBindCompositionSearch($('#uiMaterialQ'),value=>uiLibrarySearchResults(kind,value));uiHydrate();uiGalleryHydrate();uiScheduleLayout();
 }
 function uiRenderAuthors(){
   const page=$('#uiPage-authors');if(uiState.author){const a=uiAuthors.find(a=>a.id===uiState.author);if(!a){uiState.author=null;return uiRenderAuthors();}const all=uiAllRecords().filter(m=>uiLinks[m.key]===a.id),selected=all.filter(m=>uiState.authorKind==='all'||m.kind===uiState.authorKind);
@@ -10193,7 +10196,7 @@ function uiAlbum(key){
   return uiAlbums.get(key);
 }
 function uiGalleryHTML(key){const a=uiAlbum(key),shown=a.items.slice(0,a.show);return '<section class="ui-gallery" data-ui-album="'+esc(key)+'"><div class="ui-gallery-head"><span>'+(key.startsWith('author:')?'作者作品预览':'效果预览')+'</span><button data-ug="manage" data-key="'+esc(key)+'">'+(a.items.length?'管理 '+a.items.length+' 张':'添加预览图')+' ↗</button></div>'+(shown.length?'<div class="ui-gallery-pictures count-'+shown.length+'">'+shown.map((i,n)=>'<button class="ui-gallery-picture" data-ug="view" data-key="'+esc(key)+'" data-id="'+esc(i.id)+'" aria-label="放大'+esc(i.name)+'"><img data-ui-picture="'+esc(i.id)+'" data-key="'+esc(key)+'" '+(i.width?'width="'+i.width+'" height="'+i.height+'"':'')+' alt="'+esc(i.name)+'"><span class="ui-picture-tag '+(i.source==='mine'?'mine':'')+'">'+(i.source==='mine'?'我的效果':'作者示例')+(n===0?' · 封面':'')+'</span></button>').join('')+'</div>':'<button class="ui-gallery-empty" data-ug="manage" data-key="'+esc(key)+'">'+uiIcon('09-05')+'添加作者示例 / 我的效果</button>')+'<div class="ui-gallery-foot"><span>完整显示 · '+shown.length+' 张</span><label>展示<select data-ug-count="'+esc(key)+'" aria-label="预览展示数量">'+[1,2,3,4].map(n=>'<option value="'+n+'" '+(a.show===n?'selected':'')+'>'+n+' 张</option>').join('')+'</select></label></div></section>';}
-async function uiPictureBlob(item){if(item.blob)return item.blob;if(item.vibeId){const v=vibeById(item.vibeId);return v?.thumb||v?.image;}const r=await DB.get('assets',item.assetId||item.id);return r?.blob||r?.thumb;}
+async function uiPictureBlob(item){if(item.blob)return item.blob;if(item.vibeId){const v=vibeById(item.vibeId);return v?.image||v?.thumb;}const r=await DB.get('assets',item.assetId||item.id);return r?.blob||r?.thumb;}
 async function uiPictureSrc(item){const cache=item.assetId||item.id;if(uiPictureUrls.has(cache))return uiPictureUrls.get(cache);const blob=await uiPictureBlob(item);if(!blob){imageStorageFault('missing:assets:'+cache,new Error('例图暂时无法读取'));return '';}const url=URL.createObjectURL(blob);uiPictureUrls.set(cache,url);return url;}
 function uiGalleryHydrate(root=document){$$('img[data-ui-picture]',root).forEach(async im=>{const a=uiAlbum(im.dataset.key),item=a.items.find(i=>i.id===im.dataset.uiPicture);if(!item)return;try{const src=await uiPictureSrc(item);if(src&&im.isConnected){im.onload=()=>{item.width=im.naturalWidth;item.height=im.naturalHeight;uiScheduleLayout();};im.src=src;if(im.complete&&im.naturalWidth){item.width=im.naturalWidth;item.height=im.naturalHeight;}}}catch{im.alt='图片暂时读不出来，请点重新读取图片';}});}
 function uiGalleryStatus(message,bad=false){const e=$('#uiGalleryStatus');if(e){e.textContent=message;e.classList.toggle('bad',bad);}}
@@ -10203,7 +10206,7 @@ function uiOpenGallery(key){if(!key)return;uiGalleryKey=key;const d=$('#uiGaller
 function uiRenderGalleryManager(){if(!uiGalleryKey)return;const a=uiAlbum(uiGalleryKey),record=uiGalleryKey.startsWith('author:')?uiAuthors.find(a=>a.id===uiGalleryKey.slice(7)):uiRecord(uiGalleryKey);$('#uiGalleryTitle').textContent=(record?.name||'素材')+' · 预览图';$('#uiGalleryBody').innerHTML='<p class="ui-note">作者示例与自己的使用效果，都收在这里。拖动调整顺序，第一张作封面。</p><div class="ui-gallery-toolbar"><div class="btns"><button class="gbtn" data-ug="upload">'+uiIcon('09-08')+'添加图片</button><button class="gbtn" data-ug="history">'+uiIcon('01-03')+'从画过的图选</button></div><label>这次添加为<select id="uiGallerySource"><option value="mine">我的效果</option><option value="author">作者示例</option></select></label><label>卡片展示<select data-ug-count="'+esc(uiGalleryKey)+'">'+[1,2,3,4].map(n=>'<option value="'+n+'" '+(a.show===n?'selected':'')+'>'+n+' 张</option>').join('')+'</select></label></div><div id="uiGalleryDrop" role="button" tabindex="0">'+uiIcon('09-05')+'<span>拖入图片，或点击添加</span><small>也可以直接粘贴 · 横竖图都完整显示</small></div><div class="ui-gallery-manage-grid">'+a.items.map((i,n)=>'<article class="ui-gallery-item" data-ug-item="'+esc(i.id)+'" draggable="true"><div class="ui-gallery-order">⠿ '+(n+1)+(n===0?' · 封面':'')+(n>=a.show?' · 暂不展示':'')+'</div><button data-ug="view" data-key="'+esc(uiGalleryKey)+'" data-id="'+esc(i.id)+'" class="ui-manager-picture"><img data-ui-picture="'+esc(i.id)+'" data-key="'+esc(uiGalleryKey)+'" alt="'+esc(i.name)+'" draggable="false"></button><label class="ui-image-source">来源<select data-ug-source="'+esc(i.id)+'"><option value="author" '+(i.source!=='mine'?'selected':'')+'>作者示例</option><option value="mine" '+(i.source==='mine'?'selected':'')+'>我的效果</option></select></label><div class="ui-image-actions"><button data-ug="replace" data-id="'+esc(i.id)+'">更换</button><button data-ug="earlier" data-id="'+esc(i.id)+'" '+(!n?'disabled':'')+' aria-label="前移">←</button><button data-ug="later" data-id="'+esc(i.id)+'" '+(n===a.items.length-1?'disabled':'')+' aria-label="后移">→</button><button data-ug="remove" data-id="'+esc(i.id)+'" class="danger">移除</button></div></article>').join('')+'</div><div id="uiGalleryHistory" hidden></div><div class="ui-gallery-bottom"><span id="uiGalleryStatus" role="status">修改自动保存在本地</span><span>最多展示四张，额外图片保留。移除不删除历史原图。</span></div>';$('#uiGallerySource').value=uiGallerySource;uiGalleryHydrate($('#uiGalleryDialog'));uiHydrate($('#uiGalleryDialog'));}
 async function uiAddGalleryFiles(files,key=uiGalleryKey,replace=null,source=uiGallerySource){if(!key||!files.length)return;uiGalleryBusy++;const album=uiAlbum(key);let added=0;try{for(const f of [...files].slice(0,replace?1:30)){try{if(!f.type.startsWith('image/'))throw new Error('请选择图片文件');if(f.size>20*1024*1024)throw new Error('请选小于 20 MB 的图片');const m=await measure(f);const assetId='ui-picture-'+uid();const item={id:replace||assetId,assetId,name:f.name||'使用效果',width:m.w||m.im.naturalWidth,height:m.h||m.im.naturalHeight,source};const index=replace?album.items.findIndex(i=>i.id===replace):-1;if(index>=0)item.source=album.items[index].source;await DB.put('assets',{id:assetId,blob:f,thumb:await makeThumb(m.im)});URL.revokeObjectURL(m.url);if(index>=0)album.items[index]=item;else album.items.push(item);added++;}catch(err){toast(esc(err.message||'图片读不出来'));}}if(added){uiRefreshGalleries();if(uiGalleryKey===key)uiRenderGalleryManager();const ok=await uiSaveAlbum(key);if(ok)toast(replace?'图片已更换':'已收好 '+added+' 张图片');}}finally{uiGalleryBusy--;}}
 function uiGalleryMove(id,to){const a=uiAlbum(uiGalleryKey),from=a.items.findIndex(i=>i.id===id),index=typeof to==='number'?to:a.items.findIndex(i=>i.id===to);if(from<0||index<0||index>=a.items.length||index===from)return;const [item]=a.items.splice(from,1);a.items.splice(index,0,item);uiRefreshGalleries();uiRenderGalleryManager();uiSaveAlbum(uiGalleryKey);}
-async function uiGalleryView(key,id){const item=uiAlbum(key).items.find(i=>i.id===id);if(!item)return;const src=await uiPictureSrc(item);if(!src){toast('图片暂时读不出来');return;}const d=$('#uiPictureDialog');d.querySelector('img').src=src;d.querySelector('img').alt=item.name;d.showModal();}
+async function uiGalleryView(key,id){const item=uiAlbum(key).items.find(i=>i.id===id);if(!item)return;const src=await uiPictureSrc(item,true);if(!src){toast('图片暂时读不出来');return;}const d=$('#uiPictureDialog');d.querySelector('img').src=src;d.querySelector('img').alt=item.name;d.showModal();}
 function uiGalleryHistory(){const el=$('#uiGalleryHistory');el.hidden=false;el.innerHTML='<h3>选择画过的图</h3><div class="ui-gallery-history-grid">'+imgs.filter(r=>r.blob).map(r=>'<button data-ug="pick-history" data-id="'+esc(r.id)+'"><img src="'+esc(srcOf(r,true))+'" alt="'+esc(r.name||'历史图片')+'"><span>'+esc(r.name||r.prompt?.slice(0,25)||'未命名')+'</span></button>').join('')+'</div>'+(!imgs.some(r=>r.blob)?'<p class="ui-note">还没有保存过的生成图片，可以先上传自己的图片。</p>':'');el.scrollIntoView({block:'nearest',behavior:'smooth'});}
 async function uiGalleryAction(b){const key=b.dataset.key||uiGalleryKey,id=b.dataset.id,a=key?uiAlbum(key):null;switch(b.dataset.ug){case'manage':uiOpenGallery(key);break;case'upload':uiGalleryPicker={key:uiGalleryKey,replace:null,source:uiGallerySource};$('#uiGalleryFile').multiple=true;$('#uiGalleryFile').click();break;case'replace':uiGalleryPicker={key:uiGalleryKey,replace:id,source:a.items.find(i=>i.id===id)?.source||'mine'};$('#uiGalleryFile').multiple=false;$('#uiGalleryFile').click();break;case'remove':a.items=a.items.filter(i=>i.id!==id);uiRefreshGalleries();uiRenderGalleryManager();uiSaveAlbum(key);break;case'earlier':uiGalleryMove(id,a.items.findIndex(i=>i.id===id)-1);break;case'later':uiGalleryMove(id,a.items.findIndex(i=>i.id===id)+1);break;case'history':uiGalleryHistory();break;case'pick-history':{const r=recById(id);if(!r?.blob)return;uiGalleryBusy++;try{const m=await measure(r.blob),assetId='ui-picture-'+uid();await DB.put('assets',{id:assetId,blob:r.blob,thumb:r.thumb||await makeThumb(m.im)});a.items.push({id:assetId,assetId,name:r.name||'画过的图',source:uiGallerySource,from:r.id,width:m.im.naturalWidth,height:m.im.naturalHeight});URL.revokeObjectURL(m.url);uiRefreshGalleries();uiRenderGalleryManager();await uiSaveAlbum(key);}finally{uiGalleryBusy--;}break;}case'view':await uiGalleryView(key,id);break;case'close':if(uiGalleryBusy){toast('正在读取图片，请稍等');return;}await uiGalleryQueue;$('#uiGalleryDialog').close();break;}}
 function uiGalleryLayout(){for(const g of $$('.ui-gallery-pictures')){if(!g.getClientRects().length)continue;if(uiCardGalleryLayout(g))continue;const frames=[...g.children],count=frames.length;if(count<2){g.classList.remove('ui-picture-layout');g.style.height='';frames.forEach(f=>Object.assign(f.style,{width:'',left:'',top:''}));continue;}const inOverview=g.closest('.ui-author-overview'),gap=innerWidth<=900?6:9;if(inOverview){g.classList.remove('ui-picture-layout');const ratios=frames.map(f=>{const i=f.querySelector('img');return (i.naturalWidth||+i.getAttribute('width')||900)/(i.naturalHeight||+i.getAttribute('height')||1125);}),h=Math.min(210,(g.clientWidth-gap*(count-1))/ratios.reduce((s,n)=>s+n,0));frames.forEach((f,i)=>Object.assign(f.style,{width:h*ratios[i]+'px',left:'',top:''}));g.style.height='';continue;}g.classList.add('ui-picture-layout');const w=(g.clientWidth-gap)/2,h=[0,0];frames.forEach((f,i)=>{const col=i%2;Object.assign(f.style,{width:w+'px',left:col*(w+gap)+'px',top:h[col]+'px'});h[col]+=f.offsetHeight+gap;});g.style.height=Math.max(...h)-gap+'px';}}
@@ -10221,6 +10224,18 @@ async function uiInitGalleries(){
   dialog.addEventListener('keydown',e=>{if((e.key==='Enter'||e.key===' ')&&e.target.id==='uiGalleryDrop'){e.preventDefault();uiGalleryAction({dataset:{ug:'upload'}});}});dialog.addEventListener('cancel',e=>{if(uiGalleryBusy)e.preventDefault();});dialog.addEventListener('close',()=>uiGalleryKey=null);uiRefreshGalleries();
 }
 
+/* 恢复时以数据库中的原图是否完整为准；缺图只补二进制，保留本地名字和参数。 */
+async function workshopRestoreHistoryRecord(raw,z){
+ const memory=imgs.find(r=>r.id===raw.id),stored=await DB.get('images',raw.id);
+ const valid=r=>r?.blob instanceof Blob&&r.blob.size>0;
+ if(valid(stored))return null;
+ if(!raw.file&&!valid(memory))return stored||memory?null:structuredClone(raw);
+ const record={...structuredClone(raw),...stored,...memory};
+ if(valid(memory))record.blob=memory.blob;
+ else{if(!z[raw.file])throw Error('备份缺少图片：'+raw.file);record.blob=new Blob([z[raw.file]],{type:raw.mime||'image/png'});}
+ const measured=await measure(record.blob);try{record.thumb=await makeThumb(measured.im);}finally{URL.revokeObjectURL(measured.url);}
+ delete record.file;delete record.localOnly;return record;
+}
 async function uiBackupData(files){
  if(uiGalleryBusy)throw new Error('图片正在读取，请稍后备份');
  if(await uiGalleryQueue===false)throw new Error('预览图尚未保存成功');
@@ -10232,12 +10247,12 @@ async function uiRestoreData(data,z){
  if(!data)return;
  if(data.version!==1||!Array.isArray(data.authors)||!Array.isArray(data.prompts)||!Array.isArray(data.albums)||!Array.isArray(data.assets))throw new Error('新版资料格式不正确');
  for(const r of data.assets)if(!z[r.file])throw new Error('备份缺少预览图：'+r.file);
- for(const r of data.assets){if(await DB.get('assets',r.id))continue;const blob=new Blob([z[r.file]],{type:r.mime||'image/png'}),m=await measure(blob);await DB.put('assets',{id:r.id,blob,thumb:await makeThumb(m.im)});URL.revokeObjectURL(m.url);}
+ for(const r of data.assets){const stored=await DB.get('assets',r.id);if(stored?.blob instanceof Blob&&stored.blob.size>0)continue;const blob=new Blob([z[r.file]],{type:r.mime||'image/png'}),m=await measure(blob);await DB.put('assets',{id:r.id,blob,thumb:await makeThumb(m.im)});URL.revokeObjectURL(m.url);}
  const merge=(old,add)=>[...old,...add.filter(a=>a&&typeof a.id==='string'&&!old.some(b=>b.id===a.id))];
  const authors=merge(uiAuthors,data.authors),prompts=merge(uiPrompts,data.prompts),links={...data.links,...uiLinks};
  if(!LS.set('gw-authors',authors)||!LS.set('gw-prompts',prompts)||!LS.set('gw-author-links',links))throw new Error('本地存储空间不足');
  uiAuthors=authors;uiPrompts=prompts;uiLinks=links;
- for(const album of data.albums){if(!album.key||!Array.isArray(album.items))throw new Error('预览图资料格式不正确');const id='ui-gallery:'+album.key;if(await DB.get('assets',id))continue;const a={...album,id,show:clamp(+album.show||1,1,4)};await DB.put('assets',a);uiAlbums.set(a.key,a);}
+ for(const album of data.albums){if(!album.key||!Array.isArray(album.items))throw new Error('预览图资料格式不正确');const id='ui-gallery:'+album.key;const existing=await DB.get('assets',id);const a=existing?{...existing,items:[...existing.items,...album.items.filter(i=>!existing.items.some(x=>(x.assetId||x.id)===(i.assetId||i.id)))]}:{...album,id,show:clamp(+album.show||1,1,4)};await DB.put('assets',a);uiAlbums.set(a.key,a);}
  uiRefreshPage();uiRefreshGalleries();
 }
 
@@ -11311,9 +11326,9 @@ function uiLibrarySearchResults(kind,value){
  if(uiState.kind!==kind||uiState.page!=='library')return;
  uiState.query=value;collectionState('library',kind).query=value;collectionSaveUI();
  const all=kind==='char'?roleSort():uiRecords(kind),items=all.filter(r=>collectionMatch(kind,r,collectionState('library',kind))),grid=$('#uiMaterialGrid');
- if(!grid)return;grid.innerHTML=items.length?items.map(r=>uiMaterialCard(kind,r)).join(''):uiEmpty(all.length?'没有找到':'这里还没有素材','换个词或清除筛选试试。');
+ if(!grid)return;const shown=uiLibraryStart(items,kind);grid.innerHTML=items.length?shown.map(r=>uiMaterialCard(kind,r)).join(''):uiEmpty(all.length?'没有找到':'这里还没有素材','换个词或清除筛选试试。');
  const count=$('[data-collection-count="library"]');if(count)count.textContent=items.length+' / '+all.length+' 份';
- uiHydrate(grid);uiGalleryHydrate(grid);uiCardInitialLayout();uiScheduleLayout();
+ uiLibraryObserve();uiHydrate(grid);uiGalleryHydrate(grid);uiCardInitialLayout();uiScheduleLayout();
 }
 function uiQuickPatchSelection(rendered=false){return wbWithRoleSelection(()=>uiQuickPatchSelectionScoped(rendered));}
 function uiQuickPatchSelectionScoped(rendered=false){
@@ -11420,10 +11435,10 @@ async function workshopRestorePackage(file){
   const kind=key.split(':')[0],record=existing[kind]?.find(r=>kind+':'+r.id===key);
   const original=uiAlbums.get(key)||(record&&(kind==='art'||kind==='char')?{id:'ui-gallery:'+key,key,show:record.previewCount||2,items:(record.imgs||[]).map(i=>({id:i.id,assetId:i.id,name:record.name+' · 示例',source:i.source||(i.from?'mine':'author'),from:i.from||null}))}:null);
   const album=original?structuredClone(original):{...structuredClone(raw),key,id:'ui-gallery:'+key,items:[]};
-  const hashes=new Map();
+  const hashes=new Map(),missingAssets=new Set();
   for(const item of album.items){
    const stored=await DB.get('assets',item.assetId||item.id);
-   if(stored?.blob)hashes.set(await remainingHash(stored.blob),item);
+   if(stored?.blob instanceof Blob&&stored.blob.size>0)hashes.set(await remainingHash(stored.blob),item);else missingAssets.add(item.assetId||item.id);
   }
   for(const item of raw.items){
    const file=data.files.find(f=>f.name===item.file);if(!file)throw Error('备份缺少例图：'+item.file);
@@ -11435,7 +11450,7 @@ async function workshopRestorePackage(file){
    }
    const restored={...structuredClone(item),id,assetId:id};delete restored.file;delete restored.vibeId;
    // Replace only an exact dangling asset reference; retain all other existing previews.
-   const dangling=album.items.findIndex(i=>(i.assetId||i.id)===(item.assetId||item.id));
+   const dangling=album.items.findIndex(i=>(i.assetId||i.id)===(item.assetId||item.id)&&missingAssets.has(i.assetId||i.id));
    if(dangling>=0)album.items[dangling]=restored;else album.items.push(restored);
    hashes.set(file.sha256,restored);
   }
@@ -11448,10 +11463,10 @@ async function workshopRestorePackage(file){
  }
  const links={...uiLinks};if(scope.author)for(const[key,author]of Object.entries(data.links||{})){const mapped=map.get(key)||key,aid=plans.author?.map.get(author)||author,kind=mapped.slice(0,mapped.indexOf(':')),id=mapped.slice(mapped.indexOf(':')+1);if((plans[kind]?.result||existing[kind]||[]).some(r=>r.id===id)&&!Object.hasOwn(links,mapped))links[mapped]=aid;}
  const mergedApis=scope.api?mergeImageApis(apis,data.apis||[]):null,textPlan=scope.api?remainingPlanMerge(tapis,data.tapis||[]):null,presetPlan=scope.preset?remainingPlanMerge(presets,data.presets||[]):null;if(presetPlan&&mergedApis)for(const x of presetPlan.added)if(x.apiId)x.apiId=mergedApis.idMap[x.apiId]||x.apiId;
- const imageWrites=[];if(scope.images)for(const raw of data.images){if(imgs.some(r=>r.id===raw.id))continue;const r=structuredClone(raw);if(r.file){const f=data.files.find(f=>f.name===r.file);r.blob=new Blob([z[r.file]],{type:f.mime});delete r.file;const m=await measure(r.blob);r.thumb=await makeThumb(m.im);URL.revokeObjectURL(m.url);}imageWrites.push(r);}
+ const imageWrites=[];if(scope.images)for(const raw of data.images){const record=await workshopRestoreHistoryRecord(raw,z);if(record)imageWrites.push(record);}
  const local=[];if(plans.prompt)local.push(['gw-prompts',plans.prompt.result]);if(plans.art)local.push(['gw-artists',plans.art.result]);if(plans.char)local.push(['gw-roles',plans.char.result]);if(plans.author)local.push(['gw-authors',plans.author.result],['gw-author-links',links]);if(scope.promptNeg)local.push(['gw-negs',remainingPlanMerge(negLib,data.negs||[]).result]);if(mergedApis)local.push(['gw-apis',mergedApis.apis],['gw-tapis',textPlan.result]);if(presetPlan)local.push(['gw-presets',presetPlan.result]);const previous=local.map(([k])=>[k,localStorage.getItem(k)]),undo=()=>{for(const[k,v]of previous){if(v===null)localStorage.removeItem(k);else localStorage.setItem(k,v);}};
  try{for(const[k,v]of local)if(!LS.set(k,v))throw Error('存储空间不足：'+k);await new Promise((res,rej)=>{const t=DB.db.transaction(['assets','images'],'readwrite');for(const v of [...assetWrites,...albumWrites])t.objectStore('assets').put(v);if(plans.vibe)t.objectStore('assets').put({id:'vibes',list:plans.vibe.result});for(const r of imageWrites)t.objectStore('images').put(r);t.oncomplete=res;t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error||Error('资料写入中断'));});}catch(e){undo();throw e;}
- if(plans.prompt)uiPrompts=plans.prompt.result;if(plans.art)artists=plans.art.result;if(plans.char)roles=plans.char.result;if(plans.vibe)vibes=plans.vibe.result;if(plans.author){uiAuthors=plans.author.result;uiLinks=links;}for(const a of albumWrites)uiAlbums.set(a.key,a);imgs.push(...imageWrites);imgs.sort((a,b)=>b.created-a.created);
+ if(plans.prompt)uiPrompts=plans.prompt.result;if(plans.art)artists=plans.art.result;if(plans.char)roles=plans.char.result;if(plans.vibe)vibes=plans.vibe.result;if(plans.author){uiAuthors=plans.author.result;uiLinks=links;}for(const a of albumWrites)uiAlbums.set(a.key,a);for(const r of imageWrites){const index=imgs.findIndex(x=>x.id===r.id);if(index>=0)imgs[index]=r;else imgs.push(r);}imgs.sort((a,b)=>b.created-a.created);
  if(scope.promptNeg){negLib=LS.get('gw-negs',[]);if(!P.prompt&&data.currentPrompt)P.prompt=data.currentPrompt.prompt||'';if(curApi()&&data.currentPrompt&&!famP(curApi()).neg)famP(curApi()).neg=data.currentPrompt.negative||'';}if(mergedApis){apis=mergedApis.apis;tapis=textPlan.result;if(!curId){curId=mergedApis.idMap[data.cur]||apis[0]?.id||null;LS.set('gw-cur',curId);}if(!tCurId){tCurId=textPlan.map.get(data.tcur)||tapis[0]?.id||null;LS.set('gw-tcur',tCurId);}}if(presetPlan)presets=presetPlan.result;if(data.P&&Object.values(scope).every(Boolean)){const restored=structuredClone(data.P);const remap=o=>{if(!o||typeof o!=='object')return;if(typeof o.art==='string')o.art=plans.art?.map.get(o.art)||o.art;if(typeof o.libraryRoleId==='string')o.libraryRoleId=plans.char?.map.get(o.libraryRoleId)||o.libraryRoleId;if(typeof o.slotRole==='string')o.slotRole=plans.char?.map.get(o.slotRole)||o.slotRole;if(Array.isArray(o.vibes))for(const v of o.vibes)v.id=plans.vibe?.map.get(v.id)||v.id;for(const v of Object.values(o))if(v&&typeof v==='object')remap(v);};remap(restored);if(restoreCurrent)Object.assign(P,{...restored,fam:P.fam,adapterFam:P.adapterFam});mergeImageParameterState(P,restored,mergedApis?.idMap||{});if(restoreCurrent&&curApi())P.apiSwitchCarry={key:imageParameterKey(curApi()),fromId:'backup',toId:curApi().id};}
  if(scope.appearance){for(const[k,v]of Object.entries(data.settings||{}))if(remainingSettingsKeys.includes(k))localStorage.setItem(k,v);if(data.tune)Object.assign(tune,data.tune);if(['porcelain','glass'].includes(data.theme))uiState.theme=data.theme;if(typeof data.follow==='boolean')uiState.follow=data.follow;if(data.accent)uiState.accent=data.accent;imageExportKeepHidden=LS.get('gw-export-hide-info',false)===true;fsOpt=Object.assign(fsOpt,LS.get('gw-fsopt',{}));uiCardDensity.value=uiCardSizeValue(LS.get('gw-ui-card-size',35));collectionUI=LS.get('gw-collection-ui',{});themePref=['day','night'].includes(localStorage.getItem('gw-theme'))?localStorage.getItem('gw-theme'):'auto';applyMode();applyTune();uiApplyTheme();}
  LS.set('gw-p',P);renderApiPill();renderLeft();renderView();renderStrip();uiRefreshPage();uiQuickRefresh();return{legacy:false,added:Object.fromEntries(Object.entries(plans).map(([k,v])=>[k,v.added.length])),images:imageWrites.length};
@@ -12481,6 +12496,79 @@ workshopCollectBackup=async function(...args){
 };
 document.addEventListener('DOMContentLoaded',imageStoragePaint,{once:true});
 
+/* 分批只影响显示；筛选和搜索仍使用完整资料。 */
+let uiLibraryView=null,uiLayoutFrame=0;
+function uiLibraryStart(items,kind){
+ uiLibraryView?.observer?.disconnect();uiLibraryView?.more?.remove();
+ uiLibraryView={items,kind,shown:Math.min(30,items.length),observer:null,more:null,grid:null};
+ return items.slice(0,30);
+}
+function uiLibraryObserve(){
+ const view=uiLibraryView,grid=$('#uiMaterialGrid');if(!view||!grid)return;
+ view.grid=grid;view.observer?.disconnect();view.more?.remove();view.more=null;
+ if(view.shown>=view.items.length)return;
+ const more=document.createElement('button');more.type='button';more.className='gbtn ui-library-more';
+ more.style.cssText='display:block;margin:20px auto;min-height:44px';
+ more.textContent='再显示 '+Math.min(30,view.items.length-view.shown)+' 份（还有 '+(view.items.length-view.shown)+' 份）';more.onclick=uiLibraryLoadMore;
+ grid.after(more);view.more=more;
+ if(typeof IntersectionObserver==='function'){
+  const observer=new IntersectionObserver(entries=>{if(entries.some(e=>e.isIntersecting)&&uiLibraryView===view&&uiState.page==='library'){observer.disconnect();uiLibraryLoadMore();}},{rootMargin:'180px 0px'});
+  view.observer=observer;observer.observe(more);
+ }
+}
+function uiLibraryLoadMore(){
+ const view=uiLibraryView,grid=$('#uiMaterialGrid');if(!view||uiState.page!=='library'||view.kind!==uiState.kind||grid!==view.grid)return;
+ const next=view.items.slice(view.shown,view.shown+30);if(!next.length)return;
+ grid.insertAdjacentHTML('beforeend',next.map(r=>uiMaterialCard(view.kind,r)).join(''));view.shown+=next.length;
+ uiHydrate(grid);uiGalleryHydrate(grid);uiCardInitialLayout();uiLibraryObserve();uiScheduleLayout();
+}
+uiScheduleLayout=function(){if(uiLayoutFrame)return;uiLayoutFrame=requestAnimationFrame(()=>{uiLayoutFrame=0;uiLayout();});};
+
+/* 卡片与放大分别缓存；并发读取同一例图只读一次数据库。 */
+const uiPictureRequests=new Map();
+uiPictureSrc=async function(item,full=false){
+ const id=item.assetId||item.id,key=(full?'full:':'')+id;
+ if(uiPictureUrls.has(key))return uiPictureUrls.get(key);
+ if(uiPictureRequests.has(key))return uiPictureRequests.get(key);
+ const request=(async()=>{
+  let blob;
+  if(full)blob=await uiPictureBlob(item);
+  else if(item.thumb||item.blob)blob=item.thumb||item.blob;
+  else if(item.vibeId){const v=vibeById(item.vibeId);blob=v?.thumb||v?.image;}
+  else{const stored=await DB.get('assets',id);blob=stored?.thumb||stored?.blob;}
+  if(!blob){imageStorageFault('missing:assets:'+id,new Error('例图暂时无法读取'));return '';}
+  const url=URL.createObjectURL(blob);uiPictureUrls.set(key,url);return url;
+ })();
+ uiPictureRequests.set(key,request);try{return await request;}finally{if(uiPictureRequests.get(key)===request)uiPictureRequests.delete(key);}
+};
+let uiPreviewObserver=null,uiPreviewActive=0;
+const uiPreviewStates=new WeakMap(),uiPreviewQueue=[];
+function uiPreviewDrain(){
+ while(uiPreviewActive<4&&uiPreviewQueue.length){
+  const im=uiPreviewQueue.shift();if(!im.isConnected){uiPreviewStates.delete(im);continue;}
+  uiPreviewActive++;
+  (async()=>{
+   const item=uiAlbum(im.dataset.key).items.find(i=>i.id===im.dataset.uiPicture);if(!item){uiPreviewStates.delete(im);return;}
+   try{
+    const src=await uiPictureSrc(item);if(!im.isConnected)return;
+    if(!src){uiPreviewStates.delete(im);return;}
+    const loaded=()=>{if(!im.naturalWidth)return;item.width=im.naturalWidth;item.height=im.naturalHeight;uiScheduleLayout();};
+    im.onload=loaded;im.onerror=()=>{uiPreviewStates.delete(im);im.alt='图片暂时读不出来，请点重新读取图片';};
+    im.src=src;uiPreviewStates.set(im,'loaded');if(im.complete)loaded();
+   }catch{uiPreviewStates.delete(im);im.alt='图片暂时读不出来，请点重新读取图片';}
+  })().finally(()=>{uiPreviewActive--;uiPreviewDrain();});
+ }
+}
+function uiPreviewEnqueue(im){if(uiPreviewStates.get(im)==='queued'||uiPreviewStates.get(im)==='loaded')return;uiPreviewStates.set(im,'queued');uiPreviewQueue.push(im);uiPreviewDrain();}
+uiGalleryHydrate=function(root=document){
+ if(!uiPreviewObserver&&typeof IntersectionObserver==='function')uiPreviewObserver=new IntersectionObserver(entries=>{for(const e of entries)if(e.isIntersecting){uiPreviewObserver.unobserve(e.target);uiPreviewEnqueue(e.target);}},{rootMargin:'200px 0px'});
+ for(const im of $$('img[data-ui-picture]',root)){
+  if(uiPreviewStates.has(im))continue;
+  im.decoding='async';
+  if(uiPreviewObserver){uiPreviewStates.set(im,'observed');uiPreviewObserver.observe(im);}else uiPreviewEnqueue(im);
+ }
+};
+
 boot();
 
 /* =====================================================================
@@ -12566,6 +12654,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=89b26bdfa7fc17b295d6" defer></script><script src="pwa-update.js?v=89b26bdfa7fc17b295d6" defer></script>
+<script src="pwa-install.js?v=d69d4002af3f0761c9f0" defer></script><script src="pwa-update.js?v=d69d4002af3f0761c9f0" defer></script>
 </body>
 </html>
