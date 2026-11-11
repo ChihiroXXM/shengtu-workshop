@@ -2410,7 +2410,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="13b773db8816facce091">
+<meta name="atelier-version" content="4d6970f0c36b535de980">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -4188,7 +4188,7 @@ function renderView() {
     <div class="view-acts">
       ${imageExportChoice(rec.id)}
       <button class="gbtn sm solid" onclick="downloadRec('${rec.id}')">${icon("down")}下载原图</button>
-      ${fsDir && fsOpt.when !== "all" && rec.blob ? `<button class="gbtn sm solid" onclick="fsSaveOne('${rec.id}')">${icon("folder")}${rec.saved ? "再存一份" : "存进文件夹"}</button>` : ""}
+      ${rec.blob ? `<button class="gbtn sm solid" onclick="fsSaveOne('${rec.id}')">${icon("folder")}${rec.saved ? "再存一份" : "存进文件夹"}</button>` : ""}
       <button class="gbtn sm use-all" onclick="useAllSettings('${rec.id}')" title="提示词、接口、尺寸、画师串、Vibe、角色、种子……全部换成画这张时的样子">${icon("sliders")}用这张的设置</button>
       <button class="gbtn sm" onclick="continueEdit('${rec.id}')">${icon("edit")}接着改</button>
       ${rec.alphaWarning && rec.blob ? `<button class="gbtn sm" onclick="cutBlack('${rec.id}')" title="只在四周确实为黑色时处理；会另存一张，原图保留">${icon("scissors")}试着抠掉黑底</button>` : ""}
@@ -7996,7 +7996,7 @@ async function fsPick() {
   catch (e) { if (e.name !== "AbortError") toast("没选成：" + esc(e.message || e.name)); return; }
   fsDir = h; fsPerm = "ok"; fsNext = {};
   await DB.put("assets", { id: "saveDir", h }).catch(() => toast("浏览器记不住这个文件夹，下次打开要重新选"));
-  fsFlush(); toast(`选好了，以后画好的图自动存进「${esc(h.name)}」`, IMG.folder);
+  fsFlush(); toast(`已选择存图文件夹「${esc(h.name)}」，按“存哪些”设置保存；备份文件夹独立设置`, IMG.folder);
 }
 async function fsOff() {
   fsDir = null; fsPerm = "off"; fsQ = []; fsNext = {};
@@ -8543,7 +8543,7 @@ const RB = {
   img() {
     const r = viewing && viewing.type === "img" && recById(viewing.id), d = !r, nb = d || !r.blob;
     return (d ? `<div class="rb-hint"><span>先在下面<b>点一张图</b>，这里的按钮就能用了</span></div>` : "")
-      + G("保存", (r ? imageExportChoice(r.id) : "") + big("dl", "down", "下载原图", d) + (fsDir ? big("fsone", r && r.saved ? "check" : "folder", r && r.saved ? "再存一份" : "存进文件夹", nb) : "") + big("copy", "copyimg", "复制图片", nb))
+      + G("保存", (r ? imageExportChoice(r.id) : "") + big("dl", "down", "下载原图", d) + big("fsone", r && r.saved ? "check" : "folder", r && r.saved ? "再存一份" : "存进文件夹", nb) + big("copy", "copyimg", "复制图片", nb))
       + G("接着画", big("cont", "edit", "接着改", d) + big("inpaint", "brush", "局部重绘", d) + big("useall", "sliders", "用这张的设置", d) + big("again", "redo", "再画一次", d))
       + G("整理", big("fav", r && r.fav ? "starf" : "star", r && r.fav ? "取消收藏" : "收藏", d) + big("name", "tag", "起名字", d) + big("copyall", "copy", "复制参数", d))
       + G("加工", big("cut", "scissors", "抠掉黑底", nb) + big("slice", "grid", "切图", nb) + big("cmp", "cmp2", "前后对比", d || !r.parent || !recById(r.parent)))
@@ -12199,6 +12199,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=13b773db8816facce091" defer></script><script src="pwa-update.js?v=13b773db8816facce091" defer></script>
+<script src="pwa-install.js?v=4d6970f0c36b535de980" defer></script><script src="pwa-update.js?v=4d6970f0c36b535de980" defer></script>
 </body>
 </html>
