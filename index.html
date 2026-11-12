@@ -2570,7 +2570,6 @@ html[data-ui-theme=glass][data-mode=night]{
 }
 
 /* 上下透明留白使点击区达到 44px，轨道保持 iOS 式 50×30px；不使用遮挡点击的覆盖层。 */
-html[data-ui-theme] input[type=checkbox],
 html[data-ui-theme] .tg{
  --control-fill:var(--control-track);
  --control-knob:var(--control-thumb);
@@ -2604,18 +2603,58 @@ html[data-ui-theme] .tg{
  transform:none;
  transition:filter .16s ease,opacity .16s ease;
 }
-html[data-ui-theme] input[type=checkbox]:checked,
 html[data-ui-theme] .tg.on{
  --control-fill:var(--control-track-on);
  --control-overlay:transparent;
  --control-knob:var(--control-thumb-on);
  --control-x:calc(100% - 15px);
 }
+/* 勾选项目使用20px方框和明确对钩，保留原生选中/禁用/键盘行为。 */
+html[data-ui-theme] input[type=checkbox]{
+ -webkit-appearance:none;
+ appearance:none;
+ display:inline-block;
+ position:relative;
+ box-sizing:border-box;
+ flex:0 0 20px;
+ width:20px;
+ min-width:20px;
+ max-width:20px;
+ height:20px;
+ min-height:20px;
+ max-height:20px;
+ padding:0;
+ margin:0;
+ border:1.5px solid var(--control-radio-line);
+ border-radius:5px;
+ background:var(--control-thumb)!important;
+ box-shadow:none!important;
+ vertical-align:middle;
+ cursor:pointer;
+ touch-action:manipulation;
+}
+html[data-ui-theme] input[type=checkbox]::after{
+ content:'';
+ position:absolute;
+ box-sizing:content-box;
+ width:5px;
+ height:10px;
+ left:5px;
+ top:1px;
+ border:solid var(--control-thumb-on);
+ border-width:0 2.5px 2.5px 0;
+ transform:rotate(45deg);
+ opacity:0;
+ pointer-events:none;
+}
+html[data-ui-theme] input[type=checkbox]:checked,
 html[data-ui-theme] input[type=checkbox]:indeterminate{
- --control-fill:var(--control-track-on);
- --control-overlay:transparent;
- --control-knob:var(--control-thumb-on);
- --control-x:50%;
+ background:var(--control-track-on)!important;
+ border-color:var(--control-radio-line);
+}
+html[data-ui-theme] input[type=checkbox]:checked::after{opacity:1}
+html[data-ui-theme] input[type=checkbox]:indeterminate::after{
+ width:10px;height:0;left:3px;top:7px;border-width:0 0 2.5px;transform:none;opacity:1;
 }
 html[data-ui-theme] .tg::after{content:none!important}
 html[data-ui-theme] .ch-top .tg{transform:none;transform-origin:center}
@@ -2656,10 +2695,10 @@ html[data-ui-theme] input[type=radio]:checked{
 }
 
 /* 狭窄容器随控件尺寸一起适配，文字区域可以缩小和换行。 */
-html[data-ui-theme] .material-group-row{grid-template-columns:50px minmax(0,1fr);gap:8px}
+html[data-ui-theme] .material-group-row{grid-template-columns:28px minmax(0,1fr);gap:8px}
 html[data-ui-theme] .material-group-row>input{margin:0}
-html[data-ui-theme] .material-image>input[type=checkbox]{top:0;left:4px;z-index:2}
-html[data-ui-theme] .ui-cleanup-card>input[type=checkbox]{top:4px;left:8px;z-index:1}
+html[data-ui-theme] .material-image>input[type=checkbox]{top:10px;left:10px;z-index:2}
+html[data-ui-theme] .ui-cleanup-card>input[type=checkbox]{top:12px;left:12px;z-index:1}
 html[data-ui-theme] :is(.material-choice,.image-export-choice,.recipe-toggle,.wb-role-mode,.image-origin-consent){min-height:44px}
 html[data-ui-theme] :is(.material-choice,.image-export-choice,.image-origin-consent){align-items:center;gap:8px}
 html[data-ui-theme] .image-origin-consent{min-width:0;overflow-wrap:anywhere}
@@ -2687,6 +2726,9 @@ html[data-ui-theme=glass] :is(.as-chip,.collection-filter,.collection-pin,.uq-us
 @media(prefers-reduced-motion:reduce){
  html[data-ui-theme] :is(input[type=checkbox],input[type=radio],.tg){transition:none}
 }
+
+html[data-ui-theme] #backupScopeGrid>label{padding:9px 10px;gap:10px;min-height:44px}
+html[data-ui-theme] #backupScopeGrid>label:has(input:checked){box-shadow:none}
 
 .top[data-top-fit]{flex-wrap:nowrap!important;min-width:0;gap:14px}
 .top[data-top-fit]>.top-l{flex:0 0 auto;min-width:0}
@@ -2794,7 +2836,7 @@ html[data-mobile-shell] .bg-layer{position:fixed;inset:0}
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="8b303375db4806b1a2d1">
+<meta name="atelier-version" content="e56ba6409b3842933ede">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -13450,6 +13492,6 @@ boot();
   later();
 })();
 </script>
-<script src="pwa-install.js?v=8b303375db4806b1a2d1" defer></script><script src="pwa-update.js?v=8b303375db4806b1a2d1" defer></script>
+<script src="pwa-install.js?v=e56ba6409b3842933ede" defer></script><script src="pwa-update.js?v=e56ba6409b3842933ede" defer></script>
 </body>
 </html>
