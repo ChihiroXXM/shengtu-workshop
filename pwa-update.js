@@ -9,8 +9,12 @@
  document.head.append(styles);
  function blocked(){
   if(typeof jobs!=='undefined'&&jobs.some(j=>j.status==='run'))return '正在生成，完成后再点更新。';
+  if(typeof backupActiveTask!=='undefined'&&backupActiveTask||typeof remainingAutoBusy!=='undefined'&&remainingAutoBusy)return '备份或恢复还在进行，完成后再点更新。';
+  if(typeof releaseNotesState!=='undefined'&&releaseNotesState.pendingSaves)return '图片还在保存，完成后再点更新。';
+  if(typeof fsBusy!=='undefined'&&fsBusy||typeof uiGalleryBusy!=='undefined'&&uiGalleryBusy)return '图片还在保存，完成后再点更新。';
   const modal=document.querySelector('#modal');
   if(modal?.classList.contains('open')&&modal._dirty)return '编辑还没有保存，请先存好或取消编辑，再点更新。';
+  if(document.querySelector('#atelierReleaseDialog[open]'))return '先关闭更新记录，再点更新。';
   if(document.querySelector('#uiGalleryDialog[open]'))return '请先完成当前编辑，再点更新。';
   if(typeof asBusy==='function'&&asBusy())return '助手还在回复，完成后再点更新。';
   return '';
