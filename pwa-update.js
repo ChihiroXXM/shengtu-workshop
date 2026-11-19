@@ -1,3 +1,4 @@
+/*【代码地图】功能区：说明书、更新弹窗与网页版｜管：网页版新版提示（只进网页版）｜详见 代码地图.md */
 /* Compare a small static version file; refreshing always needs an explicit click. */
 (()=>{
  'use strict';
@@ -8,6 +9,7 @@
  styles.textContent='#atelierUpdateNotice{position:fixed;z-index:2000;right:12px;bottom:calc(env(safe-area-inset-bottom,0px) + 16px);width:min(360px,calc(100vw - 24px));padding:14px;border:1px solid var(--border-strong,#aaa);border-radius:12px;background:var(--modal,#f5f4f2);color:var(--text,#303030);box-shadow:0 4px 20px #0003;font:14px/1.5 system-ui;box-sizing:border-box}#atelierUpdateNotice p{margin:0 0 10px}#atelierUpdateNotice .update-actions{display:flex;justify-content:flex-end;gap:8px}#atelierUpdateNotice button{min-height:44px;padding:8px 14px;border:1px solid var(--border-strong,#aaa);border-radius:8px;background:var(--field,#eee);color:inherit;font:inherit}html[data-mobile-shell] #atelierUpdateNotice{bottom:calc(var(--mobile-tabs-height,65px) + 12px)}';
  document.head.append(styles);
  function blocked(){
+  if(typeof LS!=='undefined'&&(LS.ready===false||LS.readFaults?.size))return '文字资料尚未完整读出，已暂停更新；请先检查读取状态。';
   if(typeof jobs!=='undefined'&&jobs.some(j=>j.status==='run'))return '正在生成，完成后再点更新。';
   if(typeof backupActiveTask!=='undefined'&&backupActiveTask||typeof remainingAutoBusy!=='undefined'&&remainingAutoBusy)return '备份或恢复还在进行，完成后再点更新。';
   if(typeof releaseNotesState!=='undefined'&&releaseNotesState.pendingSaves)return '图片还在保存，完成后再点更新。';
@@ -65,6 +67,7 @@
     if(draft&&typeof P!=='undefined'&&draft.value!==P.prompt){draft.dispatchEvent(new Event('input',{bubbles:true}));}
     if(typeof imageSyncActiveParams==='function')imageSyncActiveParams();
     if(typeof P!=='undefined'&&typeof LS!=='undefined'&&LS.set('gw-p',P)===false){message.textContent='当前设置未保存，请先备份再更新。';return;}
+    if(typeof storageGuardCheckpoint==='function'&&await storageGuardCheckpoint()===false){message.textContent='文字资料还未写入本机保护库，请稍后再更新。';return;}
     const url=new URL(location.href);url.searchParams.set('atelier-update',pending);location.replace(url.href);
    }catch{message.textContent='暂时无法更新，请稍后重试。';}finally{update.disabled=false;}
   };

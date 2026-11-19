@@ -1,3 +1,4 @@
+/*【代码地图】功能区：说明书、更新弹窗与网页版｜管：网页版安装入口（只进网页版，本地 HTML 不含）｜详见 代码地图.md */
 /* Online install shell only. No service worker, telemetry or user-data upload. */
 (()=>{
  'use strict';
