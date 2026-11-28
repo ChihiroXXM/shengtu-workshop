@@ -3852,7 +3852,7 @@ html[data-ui-theme=porcelain] #mBox.backup-vault-dialog,html[data-ui-theme=porce
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon-3f35f0ee79c2.png">
 <meta name="referrer" content="no-referrer">
-<meta name="atelier-version" content="a4db09b1208d420e1775">
+<meta name="atelier-version" content="35d4f3251fb1f06ad05a">
 </head>
 <body>
 <!-- ===== 图标 ===== -->
@@ -18258,12 +18258,23 @@ const backupVaultLabels={promptNeg:'提示词与负面',artist:'画师串',role:
 const backupVault = {job:null,dir:null,index:Object.create(null),source:null,checked:new WeakMap(),openTab:'manual',historyKeep:7};
 const backupVaultIgnored=id=>id==='autoBackupDir'||id==='atelier-storage-checkpoint'||id.startsWith('atelier-backup-')||id.startsWith('atelier-text:');
 const backupVaultJournalKey='gw-vault-revisions';
-function backupVaultVersions(){return {...LS.get(backupVaultJournalKey,{})};}
+const backupVaultRevisionId='atelier-backup-vault-revisions';
+let backupVaultRevisionQueue=Promise.resolve();
+async function backupVaultVersions(){
+ try{
+  if(!DB.ok)await DB.open();
+  let row=await DB.get('assets',backupVaultRevisionId);
+  if(!row){const legacy=LS.get(backupVaultJournalKey,{});if(legacy&&Object.keys(legacy).length){await DB.put('assets',{id:backupVaultRevisionId,versions:legacy});row={versions:legacy};}}
+  try{localStorage.removeItem(backupVaultJournalKey);}catch{}
+  return {...(row?.versions||{})};
+ }catch(error){console.warn('生图工坊：备份修订记录暂不可用，将重新校验资源',error);try{localStorage.removeItem(backupVaultJournalKey);}catch{}return {};}
+}
 function backupVaultTrack(){
  if(typeof IDBObjectStore==='undefined')return;const touched=new WeakMap();
- for(const method of ['put','add','delete','clear']){const before=IDBObjectStore.prototype[method];IDBObjectStore.prototype[method]=function(...args){const request=before.apply(this,args),tx=this.transaction;if(tx.db!==DB.db||!['assets','images'].includes(this.name))return request;const id=String(method==='clear'?'*':method==='delete'?args[0]:args[0]?.id??args[1]??'');if(this.name==='assets'&&backupVaultIgnored(id))return request;let set=touched.get(tx);if(!set){set=new Set();touched.set(tx,set);tx.addEventListener('complete',()=>{const v=backupVaultVersions(),rev=Date.now()+'-'+Math.random().toString(36).slice(2,9);for(const key of set)v[key]=rev;LS.set(backupVaultJournalKey,v);});}set.add(this.name+'/'+id);return request;};}
+ document.addEventListener('atelier-care-ready',()=>{backupVaultVersions().catch(()=>{});},{once:true});
+ for(const method of ['put','add','delete','clear']){const before=IDBObjectStore.prototype[method];IDBObjectStore.prototype[method]=function(...args){const request=before.apply(this,args),tx=this.transaction;if(tx.db!==DB.db||!['assets','images'].includes(this.name))return request;const id=String(method==='clear'?'*':method==='delete'?args[0]:args[0]?.id??args[1]??'');if(this.name==='assets'&&backupVaultIgnored(id))return request;let set=touched.get(tx);if(!set){set=new Set();touched.set(tx,set);tx.addEventListener('complete',()=>{const changed=[...set],rev=Date.now()+'-'+Math.random().toString(36).slice(2,9);backupVaultRevisionQueue=backupVaultRevisionQueue.then(async()=>{const versions=await backupVaultVersions();for(const key of changed)versions[key]=rev;await DB.put('assets',{id:backupVaultRevisionId,versions});}).catch(error=>console.warn('生图工坊：备份修订记录未能保存，将重新校验资源',error));});}set.add(this.name+'/'+id);return request;};}
 }
-function backupVaultStamp(){const snapshot=LS.snapshot(),keys=Object.keys(snapshot).filter(k=>!/^gw-(?:auto-backup|vault-|lastbackup|guide|coach)/.test(k));return remainingHash(remainingStable({settings:Object.fromEntries(keys.map(k=>[k,snapshot[k]])),versions:backupVaultVersions()}));}
+async function backupVaultStamp(){const snapshot=LS.snapshot(),keys=Object.keys(snapshot).filter(k=>!/^gw-(?:auto-backup|vault-|lastbackup|guide|coach)/.test(k));return remainingHash(remainingStable({settings:Object.fromEntries(keys.map(k=>[k,snapshot[k]])),versions:await backupVaultVersions()}));}
 function backupVaultCancel(){if(backupVault.job&&!backupVault.job.committing)backupVault.job.cancelled=true;}
 function backupVaultCheck(){if(backupVault.job?.cancelled&&!backupVault.job.committing)throw Object.assign(Error('本次已取消，上一份成功备份保留'),{backupCancelled:true});}
 function backupVaultPaint(force=false){
@@ -18319,7 +18330,7 @@ async function backupVaultSave(parent,options={}){
  const dir=await backupVaultGetRoot(parent,true),io=backupVaultIO(dir);await backupVaultRecover(io);
  const scope=options.scope||remainingAllScope(),stamp=await remainingHash((await backupVaultStamp())+'|'+remainingStable({scope,withKeys:!!options.withKeys})),old=await BackupVaultCore.latest(io);
  if(old&&old.stamp===stamp&&!options.force){await backupVaultProgress('没有新增或修改，保留最近成功备份',1,1);return {unchanged:true,manifest:old,added:0,reused:Object.keys(old.resources).length};}
- let identity;try{identity=JSON.parse(await(await io.read('_系统/备份库标识.json')).text());}catch(e){if(e.name!=='NotFoundError')throw e;identity={id:crypto.randomUUID()};await io.write('_系统/备份库标识.json',BackupVaultCore.json(identity));}const row=await DB.get('assets','atelier-backup-vault-index'),index=row?.vaultId===identity.id?row.entries:Object.create(null),versions=backupVaultVersions();
+ let identity;try{identity=JSON.parse(await(await io.read('_系统/备份库标识.json')).text());}catch(e){if(e.name!=='NotFoundError')throw e;identity={id:crypto.randomUUID()};await io.write('_系统/备份库标识.json',BackupVaultCore.json(identity));}const row=await DB.get('assets','atelier-backup-vault-index'),index=row?.vaultId===identity.id?row.entries:Object.create(null),versions=await backupVaultVersions();
  const pack=await backupVaultCollect({scope,withKeys:options.withKeys,includePreviews:true});
  // A resource cache is valid only for its source record and wildcard revision.
  for(const f of pack.files){if(f.sourceKey)versions[f.sourceKey]=(versions[f.sourceKey]||'initial')+'|'+(versions[f.sourceKey.split('/')[0]+'/*']||'');}
@@ -18739,6 +18750,6 @@ boot();
 })();
 
 </script>
-<script src="pwa-install.js?v=a4db09b1208d420e1775" defer></script><script src="pwa-update.js?v=a4db09b1208d420e1775" defer></script>
+<script src="pwa-install.js?v=35d4f3251fb1f06ad05a" defer></script><script src="pwa-update.js?v=35d4f3251fb1f06ad05a" defer></script>
 </body>
 </html>
